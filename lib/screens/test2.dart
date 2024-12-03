@@ -1,87 +1,111 @@
-import 'package:flutter/material.dart';
+// import 'package:flutter/material.dart';
+// import 'package:geolocator/geolocator.dart';
+// import 'package:permission_handler/permission_handler.dart';
 
-class OverflowingListExample extends StatefulWidget {
-  @override
-  _OverflowingListExampleState createState() => _OverflowingListExampleState();
-}
+// class GPSApp extends StatefulWidget {
+//   @override
+//   _GPSAppState createState() => _GPSAppState();
+// }
 
-class _OverflowingListExampleState extends State<OverflowingListExample> {
-  final TextEditingController _textController = TextEditingController();
-  final List<String> _dataList = List.generate(20, (index) => "Item $index");
-  bool _isListVisible = false;
+// class _GPSAppState extends State<GPSApp> {
+//   String _locationMessage = "Press the button to get location.";
 
-  void _toggleListVisibility() {
-    setState(() {
-      _isListVisible = !_isListVisible;
-    });
-  }
+//   @override
+//   void initState() {
+//     super.initState();
+//     _checkPermissions();
+//   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Overflowing List Example'),
-      ),
-      body: Stack(
-        children: [
-          Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: TextField(
-                  controller: _textController,
-                  decoration: InputDecoration(
-                    labelText: 'Type something',
-                    suffixIcon: IconButton(
-                      icon: Icon(Icons.arrow_drop_up),
-                      onPressed: _toggleListVisibility,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
+//   // Check and request location permissions
+//   Future<void> _checkPermissions() async {
+//     PermissionStatus permission = await Permission.location.status;
+//     if (permission.isDenied || permission.isPermanentlyDenied) {
+//       permission = await Permission.location.request();
+//     }
 
-          // List that appears above the text field
-          if (_isListVisible)
-            Positioned(
-              left: 16.0,
-              right: 16.0,
-              bottom: MediaQuery.of(context).size.height -
-                  120, // Position the list above the text field
-              child: Material(
-                elevation: 4,
-                borderRadius: BorderRadius.circular(8),
-                child: Container(
-                  height: 200, // Set desired height for the list
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: SingleChildScrollView(
-                    child: Column(
-                      children: _dataList
-                          .map(
-                            (item) => ListTile(
-                              title: Text(item),
-                              onTap: () {
-                                _textController.text = item;
-                                _toggleListVisibility();
-                              },
-                            ),
-                          )
-                          .toList(),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
+//     if (permission.isGranted) {
+//       print("Location permission granted");
+//     } else {
+//       setState(() {
+//         _locationMessage = "Location permission denied!";
+//       });
+//     }
+//   }
 
-void main() {
-  runApp(MaterialApp(home: OverflowingListExample()));
-}
+//   // Fetch the current location
+//   Future<void> _getCurrentLocation() async {
+//     try {
+//       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+//       if (!serviceEnabled) {
+//         setState(() {
+//           _locationMessage = "Location services are disabled.";
+//         });
+//         return;
+//       }
+
+//       LocationPermission permission = await Geolocator.checkPermission();
+//       if (permission == LocationPermission.denied) {
+//         permission = await Geolocator.requestPermission();
+//         if (permission == LocationPermission.denied) {
+//           setState(() {
+//             _locationMessage = "Location permission denied.";
+//           });
+//           return;
+//         }
+//       }
+
+//       if (permission == LocationPermission.deniedForever) {
+//         setState(() {
+//           _locationMessage =
+//               "Location permissions are permanently denied. Enable them in settings.";
+//         });
+//         return;
+//       }
+
+//       Position position = await Geolocator.getCurrentPosition(
+//         desiredAccuracy: LocationAccuracy.high,
+//       );
+
+//       setState(() {
+//         _locationMessage =
+//             "Latitude: ${position.latitude}, Longitude: ${position.longitude}";
+//       });
+//     } catch (e) {
+//       setState(() {
+//         _locationMessage = "Error: $e";
+//       });
+//     }
+//   }
+
+//   @override
+//   Widget build(BuildContext context) {
+//     return Scaffold(
+//       appBar: AppBar(
+//         title: Text("GPS App"),
+//       ),
+//       body: Center(
+//         child: Column(
+//           mainAxisAlignment: MainAxisAlignment.center,
+//           children: <Widget>[
+//             Text(
+//               _locationMessage,
+//               textAlign: TextAlign.center,
+//               style: TextStyle(fontSize: 18),
+//             ),
+//             SizedBox(height: 20),
+//             ElevatedButton(
+//               onPressed: _getCurrentLocation,
+//               child: Text("Get Location"),
+//             ),
+//           ],
+//         ),
+//       ),
+//     );
+//   }
+// }
+
+// void main() {
+//   runApp(MaterialApp(
+//     home: GPSApp(),
+//   ));
+// }

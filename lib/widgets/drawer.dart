@@ -41,6 +41,10 @@ class _MyDrawerState extends State<MyDrawer> {
             leading: new Icon(Icons.message),
           ),
           ListTile(
+            title: new Text("History"),
+            leading: new Icon(Icons.history),
+          ),
+          ListTile(
             title: new Text("FAQ"),
             leading: new Icon(Icons.question_answer),
           ),

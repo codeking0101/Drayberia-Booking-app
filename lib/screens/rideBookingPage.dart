@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import './riderShowPage.dart';
+import 'package:hive/hive.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
@@ -15,6 +18,10 @@ class _SecondRouteState extends State<SecondRoute> {
   bool isCar = false;
   bool isBike = false;
   bool isTricycle = false;
+  double _distance = 0;
+  double _price_Bike = 0;
+  double _price_Tricycle = 0;
+  double _price_Car = 0;
 
   final MapController _mapController = MapController();
   TextEditingController _departureController = TextEditingController();
@@ -24,6 +31,25 @@ class _SecondRouteState extends State<SecondRoute> {
   List<Map<String, dynamic>> _autocompleteResults = [];
   List<LatLng> _routePoints = [];
   bool _isTypingForDeparture = true;
+
+  void _calculatePrice(double distance) {
+    if (distance <= 2000) {
+      setState(() {
+        _price_Bike = 42;
+        _price_Tricycle = 42;
+        _price_Car = 42;
+      });
+    } else {
+      int distanceClip = (distance.ceil() / 2000).floor();
+      setState(() {
+        _price_Bike = 42 + distanceClip * 10;
+        _price_Tricycle = 42 + distanceClip * 10;
+        _price_Car = 42 + distanceClip * 10;
+      });
+    }
+
+    print(_price_Bike);
+  }
 
   void _fetchAutocompleteResults(String query) async {
     final url =
@@ -89,7 +115,17 @@ class _SecondRouteState extends State<SecondRoute> {
     });
   }
 
+  void _setHiveData() async {
+    var box = await Hive.openBox('routeData');
+    await box.put('departureLongitude', _departurePosition!.longitude);
+    await box.put('departureLatitude', _departurePosition!.latitude);
+
+    await box.put('destinationLongitude', _destinationPosition!.longitude);
+    await box.put('destinationLatitude', _destinationPosition!.latitude);
+  }
+
   Future<void> _fetchRoute() async {
+    _setHiveData();
     final url =
         "https://router.project-osrm.org/route/v1/driving/${_departurePosition!.longitude},${_departurePosition!.latitude};${_destinationPosition!.longitude},${_destinationPosition!.latitude}?overview=full&geometries=geojson";
 
@@ -103,7 +139,14 @@ class _SecondRouteState extends State<SecondRoute> {
         }).toList();
 
         setState(() {
+          _distance = data["routes"][0]["distance"];
+        });
+        print(_distance);
+        _calculatePrice(_distance);
+
+        setState(() {
           _routePoints = points;
+          print(points);
         });
       } else {
         print("Failed to fetch route: ${response.body}");
@@ -248,12 +291,12 @@ class _SecondRouteState extends State<SecondRoute> {
                   child: Stack(
                     children: [
                       Center(
-                        heightFactor: 1.5,
+                        heightFactor: 1.85,
                         child: Text(
                           "Where Are you Going?",
                           style: TextStyle(
                             color: Colors.pink,
-                            fontSize: 25.0,
+                            fontSize: 20.0,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -280,7 +323,7 @@ class _SecondRouteState extends State<SecondRoute> {
                         left: 0,
                         right: 0,
                         child: Container(
-                          height: 300.0,
+                          height: 310.0,
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
@@ -294,60 +337,73 @@ class _SecondRouteState extends State<SecondRoute> {
                                         isBike = !isBike;
                                       });
                                     },
-                                    child: ColorFiltered(
-                                      colorFilter: isBike
-                                          ? ColorFilter.matrix(
-                                              <double>[
-                                                1,
-                                                0,
-                                                0,
-                                                0,
-                                                0,
-                                                0,
-                                                1,
-                                                0,
-                                                0,
-                                                0,
-                                                0,
-                                                0,
-                                                1,
-                                                0,
-                                                0,
-                                                0,
-                                                0,
-                                                0,
-                                                1,
-                                                0,
-                                              ],
-                                            )
-                                          : ColorFilter.matrix(
-                                              <double>[
-                                                0.2126,
-                                                0.7152,
-                                                0.0722,
-                                                0,
-                                                0,
-                                                0.2126,
-                                                0.7152,
-                                                0.0722,
-                                                0,
-                                                0,
-                                                0.2126,
-                                                0.7152,
-                                                0.0722,
-                                                0,
-                                                0,
-                                                0,
-                                                0,
-                                                0,
-                                                1,
-                                                0,
-                                              ],
-                                            ),
-                                      child: Image.asset(
-                                        "assets/images/bikeIcon.png",
-                                        height: 40.0,
-                                      ),
+                                    child: Column(
+                                      children: [
+                                        ColorFiltered(
+                                          colorFilter: isBike
+                                              ? ColorFilter.matrix(
+                                                  <double>[
+                                                    1,
+                                                    0,
+                                                    0,
+                                                    0,
+                                                    0,
+                                                    0,
+                                                    1,
+                                                    0,
+                                                    0,
+                                                    0,
+                                                    0,
+                                                    0,
+                                                    1,
+                                                    0,
+                                                    0,
+                                                    0,
+                                                    0,
+                                                    0,
+                                                    1,
+                                                    0,
+                                                  ],
+                                                )
+                                              : ColorFilter.matrix(
+                                                  <double>[
+                                                    0.2126,
+                                                    0.7152,
+                                                    0.0722,
+                                                    0,
+                                                    0,
+                                                    0.2126,
+                                                    0.7152,
+                                                    0.0722,
+                                                    0,
+                                                    0,
+                                                    0.2126,
+                                                    0.7152,
+                                                    0.0722,
+                                                    0,
+                                                    0,
+                                                    0,
+                                                    0,
+                                                    0,
+                                                    1,
+                                                    0,
+                                                  ],
+                                                ),
+                                          child: Image.asset(
+                                            "assets/images/bikeIcon.png",
+                                            height: 40.0,
+                                          ),
+                                        ),
+                                        Text(
+                                          "$_price_Bike",
+                                          style: TextStyle(
+                                            color: !isBike
+                                                ? Colors.black
+                                                : Colors.pink,
+                                            fontSize: 18.0,
+                                          ),
+                                        )
+                                      ],
                                     ),
                                   ),
                                   GestureDetector(
@@ -356,60 +412,73 @@ class _SecondRouteState extends State<SecondRoute> {
                                         isTricycle = !isTricycle;
                                       });
                                     },
-                                    child: ColorFiltered(
-                                      colorFilter: isTricycle
-                                          ? ColorFilter.matrix(
-                                              <double>[
-                                                1,
-                                                0,
-                                                0,
-                                                0,
-                                                0,
-                                                0,
-                                                1,
-                                                0,
-                                                0,
-                                                0,
-                                                0,
-                                                0,
-                                                1,
-                                                0,
-                                                0,
-                                                0,
-                                                0,
-                                                0,
-                                                1,
-                                                0,
-                                              ],
-                                            )
-                                          : ColorFilter.matrix(
-                                              <double>[
-                                                0.2126,
-                                                0.7152,
-                                                0.0722,
-                                                0,
-                                                0,
-                                                0.2126,
-                                                0.7152,
-                                                0.0722,
-                                                0,
-                                                0,
-                                                0.2126,
-                                                0.7152,
-                                                0.0722,
-                                                0,
-                                                0,
-                                                0,
-                                                0,
-                                                0,
-                                                1,
-                                                0,
-                                              ],
-                                            ),
-                                      child: Image.asset(
-                                        "assets/images/tricycleIcon.png",
-                                        height: 40.0,
-                                      ),
+                                    child: Column(
+                                      children: [
+                                        ColorFiltered(
+                                          colorFilter: isTricycle
+                                              ? ColorFilter.matrix(
+                                                  <double>[
+                                                    1,
+                                                    0,
+                                                    0,
+                                                    0,
+                                                    0,
+                                                    0,
+                                                    1,
+                                                    0,
+                                                    0,
+                                                    0,
+                                                    0,
+                                                    0,
+                                                    1,
+                                                    0,
+                                                    0,
+                                                    0,
+                                                    0,
+                                                    0,
+                                                    1,
+                                                    0,
+                                                  ],
+                                                )
+                                              : ColorFilter.matrix(
+                                                  <double>[
+                                                    0.2126,
+                                                    0.7152,
+                                                    0.0722,
+                                                    0,
+                                                    0,
+                                                    0.2126,
+                                                    0.7152,
+                                                    0.0722,
+                                                    0,
+                                                    0,
+                                                    0.2126,
+                                                    0.7152,
+                                                    0.0722,
+                                                    0,
+                                                    0,
+                                                    0,
+                                                    0,
+                                                    0,
+                                                    1,
+                                                    0,
+                                                  ],
+                                                ),
+                                          child: Image.asset(
+                                            "assets/images/tricycleIcon.png",
+                                            height: 40.0,
+                                          ),
+                                        ),
+                                        Text(
+                                          "$_price_Tricycle",
+                                          style: TextStyle(
+                                            color: !isTricycle
+                                                ? Colors.black
+                                                : Colors.pink,
+                                            fontSize: 18.0,
+                                          ),
+                                        )
+                                      ],
                                     ),
                                   ),
                                   GestureDetector(
@@ -418,60 +487,73 @@ class _SecondRouteState extends State<SecondRoute> {
                                         isCar = !isCar;
                                       });
                                     },
-                                    child: ColorFiltered(
-                                      colorFilter: isCar
-                                          ? ColorFilter.matrix(
-                                              <double>[
-                                                1,
-                                                0,
-                                                0,
-                                                0,
-                                                0,
-                                                0,
-                                                1,
-                                                0,
-                                                0,
-                                                0,
-                                                0,
-                                                0,
-                                                1,
-                                                0,
-                                                0,
-                                                0,
-                                                0,
-                                                0,
-                                                1,
-                                                0,
-                                              ],
-                                            )
-                                          : ColorFilter.matrix(
-                                              <double>[
-                                                0.2126,
-                                                0.7152,
-                                                0.0722,
-                                                0,
-                                                0,
-                                                0.2126,
-                                                0.7152,
-                                                0.0722,
-                                                0,
-                                                0,
-                                                0.2126,
-                                                0.7152,
-                                                0.0722,
-                                                0,
-                                                0,
-                                                0,
-                                                0,
-                                                0,
-                                                1,
-                                                0,
-                                              ],
-                                            ),
-                                      child: Image.asset(
-                                        "assets/images/carIcon.png",
-                                        height: 40.0,
-                                      ),
+                                    child: Column(
+                                      children: [
+                                        ColorFiltered(
+                                          colorFilter: isCar
+                                              ? ColorFilter.matrix(
+                                                  <double>[
+                                                    1,
+                                                    0,
+                                                    0,
+                                                    0,
+                                                    0,
+                                                    0,
+                                                    1,
+                                                    0,
+                                                    0,
+                                                    0,
+                                                    0,
+                                                    0,
+                                                    1,
+                                                    0,
+                                                    0,
+                                                    0,
+                                                    0,
+                                                    0,
+                                                    1,
+                                                    0,
+                                                  ],
+                                                )
+                                              : ColorFilter.matrix(
+                                                  <double>[
+                                                    0.2126,
+                                                    0.7152,
+                                                    0.0722,
+                                                    0,
+                                                    0,
+                                                    0.2126,
+                                                    0.7152,
+                                                    0.0722,
+                                                    0,
+                                                    0,
+                                                    0.2126,
+                                                    0.7152,
+                                                    0.0722,
+                                                    0,
+                                                    0,
+                                                    0,
+                                                    0,
+                                                    0,
+                                                    1,
+                                                    0,
+                                                  ],
+                                                ),
+                                          child: Image.asset(
+                                            "assets/images/carIcon.png",
+                                            height: 40.0,
+                                          ),
+                                        ),
+                                        Text(
+                                          "$_price_Car",
+                                          style: TextStyle(
+                                            color: !isCar
+                                                ? Colors.black
+                                                : Colors.pink,
+                                            fontSize: 18.0,
+                                          ),
+                                        )
+                                      ],
                                     ),
                                   ),
                                 ],
@@ -620,7 +702,14 @@ class _SecondRouteState extends State<SecondRoute> {
                                         Radius.circular(30.0))),
                                 margin: EdgeInsets.only(top: 20.0),
                                 child: TextButton(
-                                  onPressed: () {},
+                                  onPressed: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                          builder: (context) =>
+                                              RiderShowPage()),
+                                    );
+                                  },
                                   child: Row(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
