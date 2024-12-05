@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:latlong2/latlong.dart';
 import 'package:hive/hive.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
@@ -72,6 +71,7 @@ class _RiderListDrawerState extends State<RiderListDrawer> {
             children: [
               Positioned(
                 child: Container(
+                  color: const Color.fromARGB(255, 247, 52, 117),
                   height: screenHeight - 120,
                   child: ListView.builder(
                     itemCount: riders.length,
@@ -87,10 +87,20 @@ class _RiderListDrawerState extends State<RiderListDrawer> {
                           height: 75.0,
                           decoration: BoxDecoration(
                             color: _selectedIndex == index
-                                ? const Color.fromARGB(255, 236, 97, 144)
-                                : (index % 2 == 0
-                                    ? const Color.fromARGB(255, 223, 221, 221)
-                                    : const Color.fromARGB(255, 238, 234, 234)),
+                                ? const Color.fromARGB(255, 226, 10, 82)
+                                : const Color.fromARGB(255, 247, 52, 117),
+                            border: Border(
+                              top: BorderSide(
+                                color: Colors.white38,
+                                width: 2,
+                              ),
+                              bottom: (riders.length - 1) == index
+                                  ? BorderSide(
+                                      color: Colors.white38,
+                                      width: 2,
+                                    )
+                                  : BorderSide.none,
+                            ),
                           ),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -100,6 +110,9 @@ class _RiderListDrawerState extends State<RiderListDrawer> {
                                 style: TextStyle(
                                   fontSize: 15.0,
                                   fontWeight: FontWeight.w600,
+                                  color: _selectedIndex == index
+                                      ? Colors.white
+                                      : Colors.white,
                                 ),
                               ),
                               Container(
@@ -111,6 +124,9 @@ class _RiderListDrawerState extends State<RiderListDrawer> {
                                   style: TextStyle(
                                     fontSize: 15.0,
                                     fontWeight: FontWeight.w600,
+                                    color: _selectedIndex == index
+                                        ? Colors.white
+                                        : Colors.white,
                                   ),
                                 ),
                               ),

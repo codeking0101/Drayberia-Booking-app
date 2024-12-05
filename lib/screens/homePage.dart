@@ -4,10 +4,12 @@ import '../widgets/searchBar.dart';
 import 'rideBookingPage.dart';
 
 class myHomePage extends StatelessWidget {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   @override
   Widget build(BuildContext context) {
     double screenWidth = MediaQuery.of(context).size.width;
     return Scaffold(
+      key: _scaffoldKey,
       body: Container(
         decoration: BoxDecoration(
           color: const Color.fromARGB(197, 255, 252, 222),
@@ -16,14 +18,6 @@ class myHomePage extends StatelessWidget {
           slivers: [
             SliverAppBar(
               backgroundColor: const Color.fromARGB(197, 255, 252, 222),
-              title: Text(
-                "Home",
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
               floating: true,
               pinned: true,
               snap: true,
@@ -31,10 +25,7 @@ class myHomePage extends StatelessWidget {
               collapsedHeight: 180,
               flexibleSpace: Container(
                 decoration: BoxDecoration(
-                  image: DecorationImage(
-                    image: AssetImage("assets/images/homeBanner.jpg"),
-                    fit: BoxFit.cover,
-                  ),
+                  color: const Color.fromARGB(255, 247, 52, 117),
                   borderRadius: BorderRadius.only(
                     bottomLeft: Radius.elliptical(40.0, 30.0),
                     bottomRight: Radius.elliptical(40.0, 30.0),
@@ -54,7 +45,9 @@ class myHomePage extends StatelessWidget {
                       left: 15,
                       bottom: 10,
                       child: Container(
-                        width: screenWidth * 0.8,
+                        width: screenWidth < 410
+                            ? screenWidth * 0.7
+                            : screenWidth * 0.75,
                         child:
                             MySearchBar(hintText: "search all our services..."),
                       ),
@@ -75,8 +68,30 @@ class myHomePage extends StatelessWidget {
                       ),
                     ),
                     Positioned(
-                      left: 15,
-                      bottom: 80,
+                      top: 20,
+                      child: GestureDetector(
+                        onTap: () {
+                          _scaffoldKey.currentState?.openDrawer();
+                          print("Drawer opened");
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.all(8.0),
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxWidth: 100.0, // Set the desired width
+                              maxHeight: 100.0, // Set the desired height
+                            ),
+                            child: Image.asset(
+                              'assets/images/appLogo.png',
+                              fit: BoxFit.contain,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      left: 110,
+                      bottom: screenWidth <= 400 ? 115 : 105,
                       child: Text(
                         "Feel Warm with US",
                         style: TextStyle(
@@ -89,10 +104,7 @@ class myHomePage extends StatelessWidget {
                   ],
                 ),
               ),
-              iconTheme: IconThemeData(
-                size: 25,
-                color: Colors.white, // Set the color of the drawer icon
-              ),
+              leading: Container(),
             ),
             SliverList(
               delegate: SliverChildBuilderDelegate(
@@ -645,7 +657,6 @@ showAlertDialog(BuildContext context) {
     },
   );
 
-  // Create AlertDialog
   AlertDialog alert = AlertDialog(
     title: Text("Thanks for your use."),
     content: Text("This feature will be added in soon."),

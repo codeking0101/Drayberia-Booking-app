@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../screens/test.dart';
 
 class MyDrawer extends StatefulWidget {
   @override
@@ -26,8 +27,8 @@ class _MyDrawerState extends State<MyDrawer> {
             ),
           ),
           ListTile(
-            title: new Text("News"),
-            leading: new Icon(Icons.newspaper),
+            title: new Text("Active Order"),
+            leading: new Icon(Icons.route),
           ),
           Divider(
             height: 0.1,
@@ -41,6 +42,7 @@ class _MyDrawerState extends State<MyDrawer> {
             leading: new Icon(Icons.message),
           ),
           ListTile(
+            onTap: () {},
             title: new Text("History"),
             leading: new Icon(Icons.history),
           ),

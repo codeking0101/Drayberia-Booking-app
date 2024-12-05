@@ -9,6 +9,10 @@ dependencies:
 
   hive: 2.2.3
   hive_flutter: 1.1.0
+  
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
+  http: ^1.2.2
 
   geolocator: ^13.0.0
   permission_handler: ^11.3.1
@@ -85,6 +89,7 @@ flutter:
   assets:
   - assets/images/appLogo.png
   - assets/images/carIcon.png
+  - assets/images/driverAvatar.png
   - assets/images/bikeIcon.png
   - assets/images/tricycleIcon.png
   - assets/images/homeBanner.jpg
@@ -98,4 +103,6 @@ flutter:
   - assets/images/ourBestRider1.jfif
   - assets/images/ourBestRider2.jfif
   - assets/images/ourBestRider3.jfif
+  - assets/images/doubleRightArrow.gif
+  - assets/images/giphy.webp
 # PUBSPEC CHECKSUM: 2760

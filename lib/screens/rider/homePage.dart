@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../../widgets/drawer.dart';
+import 'dart:async';
 
 class RiderHomePage extends StatefulWidget {
   @override
@@ -7,9 +12,71 @@ class RiderHomePage extends StatefulWidget {
 }
 
 class _RiderHomePageState extends State<RiderHomePage> {
-  double _bottomOffset = 0;
+  MapController _mapController = MapController();
+  double _bottomOffset = 100;
   bool _isDown = false;
   int _selectedIndex = -1;
+  LatLng? _locationMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkPermissions();
+    Timer.periodic(Duration(seconds: 5), (timer) {
+      // Function called every 5 seconds
+      _getCurrentLocation();
+    });
+  }
+
+  // Check and request location permissions
+  Future<void> _checkPermissions() async {
+    PermissionStatus permission = await Permission.location.status;
+    if (permission.isDenied || permission.isPermanentlyDenied) {
+      permission = await Permission.location.request();
+    }
+
+    if (permission.isGranted) {
+      print("Location permission granted");
+    } else {
+      print("Location permission denied!");
+    }
+  }
+
+  Future<void> _getCurrentLocation() async {
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        print("Location services are disabled.");
+        return;
+      }
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          print("Location permission denied.");
+          return;
+        }
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        print(
+            "Location permissions are permanently denied. Enable them in settings.");
+        return;
+      }
+
+      Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      setState(() {
+        _locationMessage = LatLng(position.latitude, position.longitude);
+        print(_locationMessage);
+      });
+    } catch (e) {
+      print("Error: $e");
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -37,37 +104,33 @@ class _RiderHomePageState extends State<RiderHomePage> {
         ),
         child: Stack(
           children: [
-            ListView.builder(
-              itemCount: 100,
-              itemBuilder: (context, index) {
-                return GestureDetector(
-                  onTap: () {
-                    print("Taped on $index");
-                    setState(() {
-                      _selectedIndex = index;
-                    });
-                  },
-                  child: Container(
-                    height: 75.0,
-                    padding: EdgeInsets.all(15.0),
-                    decoration: BoxDecoration(
-                      color: _selectedIndex == index
-                          ? const Color.fromARGB(255, 236, 97, 144)
-                          : (index % 2 == 0
-                              ? const Color.fromARGB(255, 223, 221, 221)
-                              : const Color.fromARGB(255, 238, 234, 234)),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      children: [
-                        Text("name$index"),
-                        Text("price$index"),
-                        Text("distance$index"),
-                      ],
-                    ),
+            Center(
+              child: FlutterMap(
+                mapController: _mapController,
+                options: MapOptions(
+                  initialCenter: LatLng(14.590449, 120.980362),
+                  initialZoom: 16.0,
+                  maxZoom: 18.0,
+                  minZoom: 5.0,
+                  cameraConstraint: CameraConstraint.contain(
+                    bounds: LatLngBounds(
+                        LatLng(4.2158, 116.5891), LatLng(21.1224, 126.6056)),
                   ),
-                );
-              },
+                  // swPanBoundary: LatLng(4.2158, 116.5891),
+                  // nePanBoundary: LatLng(21.1224, 126.6056),
+                  // boundsOptions: FitBoundsOptions(
+                  //   padding: EdgeInsets.all(10.0),
+                  // ),
+                  onTap: (tapPosition, point) {},
+                ),
+                children: [
+                  TileLayer(
+                    urlTemplate:
+                        "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+                    subdomains: ['a', 'b', 'c'],
+                  ),
+                ],
+              ),
             ),
             AnimatedPositioned(
               duration: Duration(milliseconds: 300),
@@ -76,7 +139,7 @@ class _RiderHomePageState extends State<RiderHomePage> {
               left: 0,
               right: 0,
               child: Container(
-                height: 420,
+                height: 350,
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.only(
@@ -96,12 +159,12 @@ class _RiderHomePageState extends State<RiderHomePage> {
                   child: Stack(
                     children: [
                       Center(
-                        heightFactor: 1.5,
+                        heightFactor: 1.85,
                         child: Text(
-                          "About Customer",
+                          "Where Are you Going?",
                           style: TextStyle(
                             color: Colors.pink,
-                            fontSize: 25.0,
+                            fontSize: 20.0,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -113,7 +176,7 @@ class _RiderHomePageState extends State<RiderHomePage> {
                           onPressed: () {
                             setState(() {
                               _isDown = !_isDown;
-                              _bottomOffset = _bottomOffset == 0 ? -330 : 0;
+                              _bottomOffset = _bottomOffset == 0 ? -250 : 0;
                             });
                           },
                           icon: Icon(_isDown
@@ -124,140 +187,11 @@ class _RiderHomePageState extends State<RiderHomePage> {
                         ),
                       ),
                       Positioned(
-                        top: 70.0,
+                        top: 60.0,
                         left: 0,
                         right: 0,
                         child: Container(
-                          height: 300.0,
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.spaceAround,
-                            children: [
-                              Table(
-                                border: TableBorder.all(),
-                                children: [
-                                  TableRow(children: [
-                                    Padding(
-                                        padding: const EdgeInsets.all(8.0),
-                                        child: Text('Name')),
-                                    Padding(
-                                        padding: const EdgeInsets.all(8.0),
-                                        child: Text('client name')),
-                                  ]),
-                                  TableRow(children: [
-                                    Padding(
-                                        padding: const EdgeInsets.all(8.0),
-                                        child: Text('From')),
-                                    Padding(
-                                      padding: const EdgeInsets.all(8.0),
-                                      child: Text(
-                                        'departure',
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                  ]),
-                                  TableRow(children: [
-                                    Padding(
-                                        padding: const EdgeInsets.all(8.0),
-                                        child: Text('To')),
-                                    Padding(
-                                        padding: const EdgeInsets.all(8.0),
-                                        child: Text('destination')),
-                                  ]),
-                                  TableRow(children: [
-                                    Padding(
-                                        padding: const EdgeInsets.all(8.0),
-                                        child: Text('Price')),
-                                    Padding(
-                                        padding: const EdgeInsets.all(8.0),
-                                        child: Text('price')),
-                                  ]),
-                                  TableRow(children: [
-                                    Padding(
-                                        padding: const EdgeInsets.all(8.0),
-                                        child: Text('Far from You')),
-                                    Padding(
-                                        padding: const EdgeInsets.all(8.0),
-                                        child: Text('distance')),
-                                  ]),
-                                  TableRow(children: [
-                                    Padding(
-                                        padding: const EdgeInsets.all(8.0),
-                                        child: Text('mobile')),
-                                    Padding(
-                                        padding: const EdgeInsets.all(8.0),
-                                        child: Text('9409356548')),
-                                  ]),
-                                ],
-                              ),
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceAround,
-                                children: [
-                                  Container(
-                                    decoration: BoxDecoration(
-                                      color: Colors.pink,
-                                      borderRadius: BorderRadius.all(
-                                        Radius.circular(30.0),
-                                      ),
-                                    ),
-                                    width: screenWidth / 4,
-                                    child: TextButton(
-                                      onPressed: () {},
-                                      child: Text(
-                                        "Accept",
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 16.0,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  Container(
-                                    decoration: BoxDecoration(
-                                      color: Colors.pink,
-                                      borderRadius: BorderRadius.all(
-                                        Radius.circular(30.0),
-                                      ),
-                                    ),
-                                    width: screenWidth / 4,
-                                    child: TextButton(
-                                      onPressed: () {},
-                                      child: Text(
-                                        "Decline",
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 16.0,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  Container(
-                                    decoration: BoxDecoration(
-                                      color: Colors.pink,
-                                      borderRadius: BorderRadius.all(
-                                        Radius.circular(30.0),
-                                      ),
-                                    ),
-                                    width: screenWidth / 3,
-                                    child: TextButton(
-                                      onPressed: () {},
-                                      child: Text(
-                                        "Show on Map",
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 16.0,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
+                          height: 310.0,
                         ),
                       ),
                     ],

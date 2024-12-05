@@ -13,6 +13,7 @@ class SecondRoute extends StatefulWidget {
 }
 
 class _SecondRouteState extends State<SecondRoute> {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   double _bottomOffset = 0;
   bool _isDown = false;
   bool isCar = false;
@@ -22,6 +23,8 @@ class _SecondRouteState extends State<SecondRoute> {
   double _price_Bike = 0;
   double _price_Tricycle = 0;
   double _price_Car = 0;
+  bool _payWithCash = true;
+  bool _isSelectedWell = false;
 
   final MapController _mapController = MapController();
   TextEditingController _departureController = TextEditingController();
@@ -31,6 +34,26 @@ class _SecondRouteState extends State<SecondRoute> {
   List<Map<String, dynamic>> _autocompleteResults = [];
   List<LatLng> _routePoints = [];
   bool _isTypingForDeparture = true;
+
+  void _searchNearestRiders() {
+    if (!_isSelectedWell) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Pls select positions Correct.')),
+      );
+      return;
+    }
+    if (isBike | isTricycle | isCar) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => RiderShowPage()),
+      );
+    } else {
+      _scaffoldKey.currentState?.openDrawer();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Select vehicle type first.')),
+      );
+    }
+  }
 
   void _calculatePrice(double distance) {
     if (distance <= 2000) {
@@ -122,10 +145,29 @@ class _SecondRouteState extends State<SecondRoute> {
 
     await box.put('destinationLongitude', _destinationPosition!.longitude);
     await box.put('destinationLatitude', _destinationPosition!.latitude);
+
+    await box.put('pickupLocation', _departureController.text);
+    await box.put('destinationLocation', _destinationController.text);
+
+    await box.put('priceBike', _price_Bike);
+    await box.put('priceTricycle', _price_Tricycle);
+    await box.put('priceCar', _price_Car);
+  }
+
+  void _saveVehicleType() async {
+    var box = await Hive.openBox('routeData');
+    if (isBike) {
+      await box.put('vehicleType', 0);
+    }
+    if (isTricycle) {
+      await box.put('vehicleType', 1);
+    }
+    if (isCar) {
+      await box.put('vehicleType', 2);
+    }
   }
 
   Future<void> _fetchRoute() async {
-    _setHiveData();
     final url =
         "https://router.project-osrm.org/route/v1/driving/${_departurePosition!.longitude},${_departurePosition!.latitude};${_destinationPosition!.longitude},${_destinationPosition!.latitude}?overview=full&geometries=geojson";
 
@@ -148,18 +190,319 @@ class _SecondRouteState extends State<SecondRoute> {
           _routePoints = points;
           print(points);
         });
+        _isSelectedWell = true;
       } else {
         print("Failed to fetch route: ${response.body}");
       }
     } catch (e) {
       print("Error fetching route: $e");
     }
+    _setHiveData();
   }
 
   @override
   Widget build(BuildContext context) {
     double screenWidth = MediaQuery.of(context).size.width;
+    double screenHeight = MediaQuery.of(context).size.height;
     return Scaffold(
+      key: _scaffoldKey,
+      drawer: Container(
+        width: 300,
+        height: screenHeight,
+        color: Colors.pink,
+        child: Column(
+          children: [
+            SizedBox(
+              height: 70.0,
+            ),
+            Text(
+              "Select Vehicle Type.",
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 20.0,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            SizedBox(
+              height: 20.0,
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      isTricycle = isCar = false;
+                      isBike = !isBike;
+                    });
+                  },
+                  child: Column(
+                    children: [
+                      ColorFiltered(
+                        colorFilter: isBike
+                            ? ColorFilter.matrix(
+                                <double>[
+                                  1,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  1,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  1,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  1,
+                                  0,
+                                ],
+                              )
+                            : ColorFilter.matrix(
+                                <double>[
+                                  0.2126,
+                                  0.7152,
+                                  0.0722,
+                                  0,
+                                  0,
+                                  0.2126,
+                                  0.7152,
+                                  0.0722,
+                                  0,
+                                  0,
+                                  0.2126,
+                                  0.7152,
+                                  0.0722,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  1,
+                                  0,
+                                ],
+                              ),
+                        child: Image.asset(
+                          "assets/images/bikeIcon.png",
+                          height: 40.0,
+                        ),
+                      ),
+                      Text(
+                        "$_price_Bike",
+                        style: TextStyle(
+                          color: !isBike ? Colors.black87 : Colors.white,
+                          fontSize: 18.0,
+                        ),
+                      )
+                    ],
+                  ),
+                ),
+                GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      isBike = isCar = false;
+                      isTricycle = !isTricycle;
+                    });
+                  },
+                  child: Column(
+                    children: [
+                      ColorFiltered(
+                        colorFilter: isTricycle
+                            ? ColorFilter.matrix(
+                                <double>[
+                                  1,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  1,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  1,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  1,
+                                  0,
+                                ],
+                              )
+                            : ColorFilter.matrix(
+                                <double>[
+                                  0.2126,
+                                  0.7152,
+                                  0.0722,
+                                  0,
+                                  0,
+                                  0.2126,
+                                  0.7152,
+                                  0.0722,
+                                  0,
+                                  0,
+                                  0.2126,
+                                  0.7152,
+                                  0.0722,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  1,
+                                  0,
+                                ],
+                              ),
+                        child: Image.asset(
+                          "assets/images/tricycleIcon.png",
+                          height: 40.0,
+                        ),
+                      ),
+                      Text(
+                        "$_price_Tricycle",
+                        style: TextStyle(
+                          color: !isTricycle ? Colors.black87 : Colors.white,
+                          fontSize: 18.0,
+                        ),
+                      )
+                    ],
+                  ),
+                ),
+                GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      isBike = isTricycle = false;
+                      isCar = !isCar;
+                    });
+                  },
+                  child: Column(
+                    children: [
+                      ColorFiltered(
+                        colorFilter: isCar
+                            ? ColorFilter.matrix(
+                                <double>[
+                                  1,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  1,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  1,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  1,
+                                  0,
+                                ],
+                              )
+                            : ColorFilter.matrix(
+                                <double>[
+                                  0.2126,
+                                  0.7152,
+                                  0.0722,
+                                  0,
+                                  0,
+                                  0.2126,
+                                  0.7152,
+                                  0.0722,
+                                  0,
+                                  0,
+                                  0.2126,
+                                  0.7152,
+                                  0.0722,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  1,
+                                  0,
+                                ],
+                              ),
+                        child: Image.asset(
+                          "assets/images/carIcon.png",
+                          height: 40.0,
+                        ),
+                      ),
+                      Text(
+                        "$_price_Car",
+                        style: TextStyle(
+                          color: !isCar ? Colors.black87 : Colors.white,
+                          fontSize: 18.0,
+                        ),
+                      )
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(
+              height: 30.0,
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Text(
+                  "Pay With Cash.",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18.0,
+                  ),
+                ),
+                Checkbox(
+                  checkColor: Colors.pink,
+                  activeColor: Colors.white,
+                  value: _payWithCash,
+                  onChanged: (bool) {
+                    setState(() {
+                      _payWithCash = true;
+                    });
+                  },
+                ),
+              ],
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Text(
+                  "Pay With GCash.",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18.0,
+                  ),
+                ),
+                Checkbox(
+                  checkColor: Colors.pink,
+                  activeColor: Colors.white,
+                  value: !_payWithCash,
+                  onChanged: (bool) {
+                    setState(() {
+                      _payWithCash = false;
+                    });
+                  },
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
       appBar: AppBar(
         backgroundColor: const Color.fromARGB(255, 247, 52, 117),
         title: Container(
@@ -218,7 +561,7 @@ class _SecondRouteState extends State<SecondRoute> {
                   TileLayer(
                     urlTemplate:
                         "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-                    // subdomains: ['a', 'b', 'c'],
+                    subdomains: ['a', 'b', 'c'],
                   ),
                   if (_departurePosition != null)
                     MarkerLayer(
@@ -271,7 +614,7 @@ class _SecondRouteState extends State<SecondRoute> {
               left: 0,
               right: 0,
               child: Container(
-                height: 420,
+                height: 350,
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.only(
@@ -308,7 +651,7 @@ class _SecondRouteState extends State<SecondRoute> {
                           onPressed: () {
                             setState(() {
                               _isDown = !_isDown;
-                              _bottomOffset = _bottomOffset == 0 ? -330 : 0;
+                              _bottomOffset = _bottomOffset == 0 ? -250 : 0;
                             });
                           },
                           icon: Icon(_isDown
@@ -319,245 +662,14 @@ class _SecondRouteState extends State<SecondRoute> {
                         ),
                       ),
                       Positioned(
-                        top: 70.0,
+                        top: 60.0,
                         left: 0,
                         right: 0,
                         child: Container(
                           height: 310.0,
                           child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisAlignment: MainAxisAlignment.start,
                             children: [
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceEvenly,
-                                children: [
-                                  GestureDetector(
-                                    onTap: () {
-                                      setState(() {
-                                        isBike = !isBike;
-                                      });
-                                    },
-                                    child: Column(
-                                      children: [
-                                        ColorFiltered(
-                                          colorFilter: isBike
-                                              ? ColorFilter.matrix(
-                                                  <double>[
-                                                    1,
-                                                    0,
-                                                    0,
-                                                    0,
-                                                    0,
-                                                    0,
-                                                    1,
-                                                    0,
-                                                    0,
-                                                    0,
-                                                    0,
-                                                    0,
-                                                    1,
-                                                    0,
-                                                    0,
-                                                    0,
-                                                    0,
-                                                    0,
-                                                    1,
-                                                    0,
-                                                  ],
-                                                )
-                                              : ColorFilter.matrix(
-                                                  <double>[
-                                                    0.2126,
-                                                    0.7152,
-                                                    0.0722,
-                                                    0,
-                                                    0,
-                                                    0.2126,
-                                                    0.7152,
-                                                    0.0722,
-                                                    0,
-                                                    0,
-                                                    0.2126,
-                                                    0.7152,
-                                                    0.0722,
-                                                    0,
-                                                    0,
-                                                    0,
-                                                    0,
-                                                    0,
-                                                    1,
-                                                    0,
-                                                  ],
-                                                ),
-                                          child: Image.asset(
-                                            "assets/images/bikeIcon.png",
-                                            height: 40.0,
-                                          ),
-                                        ),
-                                        Text(
-                                          "$_price_Bike",
-                                          style: TextStyle(
-                                            color: !isBike
-                                                ? Colors.black
-                                                : Colors.pink,
-                                            fontSize: 18.0,
-                                          ),
-                                        )
-                                      ],
-                                    ),
-                                  ),
-                                  GestureDetector(
-                                    onTap: () {
-                                      setState(() {
-                                        isTricycle = !isTricycle;
-                                      });
-                                    },
-                                    child: Column(
-                                      children: [
-                                        ColorFiltered(
-                                          colorFilter: isTricycle
-                                              ? ColorFilter.matrix(
-                                                  <double>[
-                                                    1,
-                                                    0,
-                                                    0,
-                                                    0,
-                                                    0,
-                                                    0,
-                                                    1,
-                                                    0,
-                                                    0,
-                                                    0,
-                                                    0,
-                                                    0,
-                                                    1,
-                                                    0,
-                                                    0,
-                                                    0,
-                                                    0,
-                                                    0,
-                                                    1,
-                                                    0,
-                                                  ],
-                                                )
-                                              : ColorFilter.matrix(
-                                                  <double>[
-                                                    0.2126,
-                                                    0.7152,
-                                                    0.0722,
-                                                    0,
-                                                    0,
-                                                    0.2126,
-                                                    0.7152,
-                                                    0.0722,
-                                                    0,
-                                                    0,
-                                                    0.2126,
-                                                    0.7152,
-                                                    0.0722,
-                                                    0,
-                                                    0,
-                                                    0,
-                                                    0,
-                                                    0,
-                                                    1,
-                                                    0,
-                                                  ],
-                                                ),
-                                          child: Image.asset(
-                                            "assets/images/tricycleIcon.png",
-                                            height: 40.0,
-                                          ),
-                                        ),
-                                        Text(
-                                          "$_price_Tricycle",
-                                          style: TextStyle(
-                                            color: !isTricycle
-                                                ? Colors.black
-                                                : Colors.pink,
-                                            fontSize: 18.0,
-                                          ),
-                                        )
-                                      ],
-                                    ),
-                                  ),
-                                  GestureDetector(
-                                    onTap: () {
-                                      setState(() {
-                                        isCar = !isCar;
-                                      });
-                                    },
-                                    child: Column(
-                                      children: [
-                                        ColorFiltered(
-                                          colorFilter: isCar
-                                              ? ColorFilter.matrix(
-                                                  <double>[
-                                                    1,
-                                                    0,
-                                                    0,
-                                                    0,
-                                                    0,
-                                                    0,
-                                                    1,
-                                                    0,
-                                                    0,
-                                                    0,
-                                                    0,
-                                                    0,
-                                                    1,
-                                                    0,
-                                                    0,
-                                                    0,
-                                                    0,
-                                                    0,
-                                                    1,
-                                                    0,
-                                                  ],
-                                                )
-                                              : ColorFilter.matrix(
-                                                  <double>[
-                                                    0.2126,
-                                                    0.7152,
-                                                    0.0722,
-                                                    0,
-                                                    0,
-                                                    0.2126,
-                                                    0.7152,
-                                                    0.0722,
-                                                    0,
-                                                    0,
-                                                    0.2126,
-                                                    0.7152,
-                                                    0.0722,
-                                                    0,
-                                                    0,
-                                                    0,
-                                                    0,
-                                                    0,
-                                                    1,
-                                                    0,
-                                                  ],
-                                                ),
-                                          child: Image.asset(
-                                            "assets/images/carIcon.png",
-                                            height: 40.0,
-                                          ),
-                                        ),
-                                        Text(
-                                          "$_price_Car",
-                                          style: TextStyle(
-                                            color: !isCar
-                                                ? Colors.black
-                                                : Colors.pink,
-                                            fontSize: 18.0,
-                                          ),
-                                        )
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
                               Container(
                                 margin: EdgeInsets.only(top: 20.0),
                                 decoration: BoxDecoration(
@@ -601,7 +713,7 @@ class _SecondRouteState extends State<SecondRoute> {
                                                       )
                                                     : null,
                                                 hintText:
-                                                    "Select your Departure.",
+                                                    "Select your Location.",
                                                 border: InputBorder.none,
                                                 contentPadding:
                                                     EdgeInsets.symmetric(
@@ -622,7 +734,7 @@ class _SecondRouteState extends State<SecondRoute> {
                                                 _isDown = true;
                                                 _isTypingForDeparture = true;
                                                 _autocompleteResults.clear();
-                                                _bottomOffset = -330;
+                                                _bottomOffset = -250;
                                               });
                                             },
                                             icon: Icon(Icons.location_on),
@@ -681,7 +793,7 @@ class _SecondRouteState extends State<SecondRoute> {
                                                 _isDown = true;
                                                 _isTypingForDeparture = false;
                                                 _autocompleteResults.clear();
-                                                _bottomOffset = -330;
+                                                _bottomOffset = -250;
                                               });
                                             },
                                             iconSize: screenWidth * 0.075,
@@ -703,12 +815,8 @@ class _SecondRouteState extends State<SecondRoute> {
                                 margin: EdgeInsets.only(top: 20.0),
                                 child: TextButton(
                                   onPressed: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                          builder: (context) =>
-                                              RiderShowPage()),
-                                    );
+                                    _saveVehicleType();
+                                    _searchNearestRiders();
                                   },
                                   child: Row(
                                     mainAxisAlignment: MainAxisAlignment.center,
@@ -718,12 +826,36 @@ class _SecondRouteState extends State<SecondRoute> {
                                         color: Colors.white,
                                       ),
                                       Text(
-                                        "Search Riders.",
+                                        "Book ",
                                         style: TextStyle(
                                           color: Colors.white,
                                           fontSize: 20.0,
                                         ),
                                       ),
+                                      // SizedBox(
+                                      //   width: 30.0,
+                                      // ),
+                                      if (isBike)
+                                        Image.asset(
+                                          height: 30.0,
+                                          'assets/images/bikeIcon.png',
+                                        ),
+                                      SizedBox(
+                                        width: 10.0,
+                                      ),
+                                      if (isTricycle)
+                                        Image.asset(
+                                          height: 30.0,
+                                          'assets/images/tricycleIcon.png',
+                                        ),
+                                      SizedBox(
+                                        width: 10.0,
+                                      ),
+                                      if (isCar)
+                                        Image.asset(
+                                          height: 30.0,
+                                          'assets/images/carIcon.png',
+                                        ),
                                     ],
                                   ),
                                 ),

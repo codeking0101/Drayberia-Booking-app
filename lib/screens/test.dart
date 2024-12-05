@@ -1,56 +1,53 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 
-void main() => runApp(MyApp());
-
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      home: ParentWidget(),
-    );
+  _MyAppState createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  Timer? _timer;
+  int _counter = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _startTimer();
   }
-}
 
-class ParentWidget extends StatefulWidget {
   @override
-  _ParentWidgetState createState() => _ParentWidgetState();
-}
+  void dispose() {
+    _timer?.cancel(); // Cancel the timer when the widget is disposed
+    super.dispose();
+  }
 
-class _ParentWidgetState extends State<ParentWidget> {
-  String message = "No signal received";
-
-  void _updateMessage(String newMessage) {
-    setState(() {
-      message = newMessage;
+  void _startTimer() {
+    _timer = Timer.periodic(Duration(seconds: 5), (timer) {
+      // Function called every 5 seconds
+      _myFunction();
     });
+  }
+
+  void _myFunction() {
+    setState(() {
+      _counter++; // Example logic
+    });
+    print("Function called: Counter is $_counter");
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("Signal Transmission Example")),
-      body: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(message),
-          SizedBox(height: 20),
-          ChildWidget(onSignalSent: _updateMessage),
-        ],
+      appBar: AppBar(title: Text("Call Function Every 5 Seconds")),
+      body: Center(
+        child: Text(
+          "Counter: $_counter",
+          style: TextStyle(fontSize: 24),
+        ),
       ),
     );
   }
 }
 
-class ChildWidget extends StatelessWidget {
-  final Function(String) onSignalSent;
-
-  ChildWidget({required this.onSignalSent});
-
-  @override
-  Widget build(BuildContext context) {
-    return ElevatedButton(
-      onPressed: () => onSignalSent("Signal received from ChildWidget!"),
-      child: Text("Send Signal"),
-    );
-  }
-}
+void main() => runApp(MaterialApp(home: MyApp()));
