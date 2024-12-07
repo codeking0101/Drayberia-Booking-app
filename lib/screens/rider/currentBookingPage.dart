@@ -4,38 +4,36 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../../widgets/drawer.dart';
-import '../../widgets/searchBar.dart';
-import './currentBookingPage.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:async';
 
-class RiderHomePage extends StatefulWidget {
+class currentBookingPage extends StatefulWidget {
   @override
-  _RiderHomePageState createState() => _RiderHomePageState();
+  currentBookingPageState createState() => currentBookingPageState();
 }
 
-class _RiderHomePageState extends State<RiderHomePage> {
+class currentBookingPageState extends State<currentBookingPage> {
   double _totalDragDistance = 0.0;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   Timer? _timer;
   MapController _mapController = MapController();
-  double _bottomOffset = -400;
-  bool _isDown = false;
+  double _bottomOffset = -270;
+  bool _isDown = true;
   bool isDisposed = false;
   int _selectedIndex = 0;
   LatLng? _locationMessage;
   bool isFirst = true;
+  bool isRideStarted = false;
 
-  List<LatLng> _routePoints = [];
+  List<LatLng> _routePoints2Client = [];
+  List<LatLng> _routePoints2Destination = [];
 
   String clientDeparture = '';
   String clientDestination = '';
 
   LatLng? clientDeparturePosition;
   LatLng? clientDestinationPosition;
-
-  List<dynamic> waitingClients = [];
 
   @override
   void initState() {
@@ -98,28 +96,11 @@ class _RiderHomePageState extends State<RiderHomePage> {
         setState(() {
           _locationMessage = LatLng(position.latitude, position.longitude);
 
-          waitingClients = [
-            {
-              "name": "Client1",
-              "index": 0,
-              "position": LatLng(position.latitude - 0.01, position.longitude),
-            },
-            {
-              "name": "Client2",
-              "index": 1,
-              "position": LatLng(position.latitude + 0.01, position.longitude),
-            },
-            {
-              "name": "Client3",
-              "index": 2,
-              "position": LatLng(position.latitude, position.longitude + 0.01),
-            },
-            {
-              "name": "Client4",
-              "index": 3,
-              "position": LatLng(position.latitude, position.longitude - 0.01),
-            },
-          ];
+          if (isRideStarted) {
+            _fetchRouteToDestination();
+          } else {
+            _fetchRouteToClient();
+          }
           print(_locationMessage);
         });
       }
@@ -127,15 +108,27 @@ class _RiderHomePageState extends State<RiderHomePage> {
         isFirst = false;
         _mapController.move(
             LatLng(position.latitude, position.longitude), 16.0);
+
+        setState(() {
+          clientDeparturePosition =
+              LatLng(position.latitude - 0.01, position.longitude - 0.01);
+          clientDestinationPosition =
+              LatLng(position.latitude - 0.025, position.longitude);
+        });
+
+        _fetchRouteToClient();
+        _fetchRouteToDestination();
+        _setClientDeparture(position.latitude, position.longitude);
+        _setClientDestination(position.latitude, position.longitude);
       }
     } catch (e) {
       print("Error: $e");
     }
   }
 
-  Future<void> _fetchRoute() async {
+  Future<void> _fetchRouteToClient() async {
     final url =
-        "https://router.project-osrm.org/route/v1/driving/${clientDeparturePosition?.longitude},${clientDeparturePosition?.latitude};${clientDestinationPosition?.longitude},${clientDestinationPosition?.latitude}?overview=full&geometries=geojson";
+        "https://router.project-osrm.org/route/v1/driving/${_locationMessage?.longitude},${_locationMessage?.latitude};${clientDeparturePosition?.longitude},${clientDeparturePosition?.latitude}?overview=full&geometries=geojson";
 
     try {
       final response = await http.get(Uri.parse(url));
@@ -146,7 +139,34 @@ class _RiderHomePageState extends State<RiderHomePage> {
           return LatLng(coord[1], coord[0]); // Reverse lat/lon order
         }).toList();
         setState(() {
-          _routePoints = points;
+          _routePoints2Client = points;
+        });
+      } else {
+        print("Failed to fetch route: ${response.body}");
+      }
+    } catch (e) {
+      print("Error fetching route: $e");
+    }
+  }
+
+  Future<void> _fetchRouteToDestination() async {
+    String url =
+        "https://router.project-osrm.org/route/v1/driving/${clientDeparturePosition?.longitude},${clientDeparturePosition?.latitude};${clientDestinationPosition?.longitude},${clientDestinationPosition?.latitude}?overview=full&geometries=geojson";
+
+    if (isRideStarted)
+      url =
+          "https://router.project-osrm.org/route/v1/driving/${_locationMessage?.longitude},${_locationMessage?.latitude};${clientDestinationPosition?.longitude},${clientDestinationPosition?.latitude}?overview=full&geometries=geojson";
+
+    try {
+      final response = await http.get(Uri.parse(url));
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final coordinates = data['routes'][0]['geometry']['coordinates'];
+        final points = coordinates.map<LatLng>((coord) {
+          return LatLng(coord[1], coord[0]); // Reverse lat/lon order
+        }).toList();
+        setState(() {
+          _routePoints2Destination = points;
         });
       } else {
         print("Failed to fetch route: ${response.body}");
@@ -220,69 +240,73 @@ class _RiderHomePageState extends State<RiderHomePage> {
                         "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
                     subdomains: ['a', 'b', 'c'],
                   ),
-                  MarkerLayer(
-                    markers: waitingClients.map((client) {
-                      int index = client['index'];
-                      return Marker(
+                  if (clientDestinationPosition != null)
+                    MarkerLayer(
+                      markers: [
+                        Marker(
+                          width: 80.0,
+                          height: 80.0,
+                          point: clientDestinationPosition!,
+                          child: Stack(
+                            children: [
+                              Positioned(
+                                child: Icon(
+                                  Icons.location_on,
+                                  color: Colors.red,
+                                  size: 60.0,
+                                ),
+                              ),
+                              Positioned(
+                                left: 40,
+                                bottom: 10,
+                                child: Text(
+                                  'To',
+                                  style: TextStyle(
+                                    color: Colors.red,
+                                    fontSize: 20.0,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  if (clientDeparturePosition != null && !isRideStarted)
+                    MarkerLayer(
+                      markers: [
+                        Marker(
                           width: 100.0,
                           height: 80.0,
-                          point: client['position'],
-                          child: GestureDetector(
-                            onTap: () {
-                              setState(() {
-                                _mapController.move(client['position'], 15.0);
-                                _bottomOffset = 0;
-                                _isDown = false;
-                                clientDeparturePosition = client['position'];
-                                clientDestinationPosition = LatLng(
-                                    client['position'].latitude - 0.015,
-                                    client['position'].longitude);
-                                _setClientDeparture(client['position'].latitude,
-                                    client['position'].longitude);
-                                _setClientDestination(
-                                    client['position'].latitude - 0.015,
-                                    client['position'].longitude);
-                              });
-                            },
-                            child: Stack(
-                              children: [
-                                Positioned(
-                                  child: Icon(
-                                    Icons.location_on,
-                                    color:
-                                        const Color.fromARGB(255, 235, 140, 32),
-                                    size: 60.0,
+                          point: clientDeparturePosition!,
+                          child: Stack(
+                            children: [
+                              Positioned(
+                                child: Icon(
+                                  Icons.location_on,
+                                  color:
+                                      const Color.fromARGB(255, 235, 140, 32),
+                                  size: 60.0,
+                                ),
+                              ),
+                              Positioned(
+                                left: 40,
+                                bottom: 10,
+                                child: Text(
+                                  'Client',
+                                  style: TextStyle(
+                                    color: Colors.green,
+                                    fontSize: 20.0,
+                                    fontWeight: FontWeight.w700,
                                   ),
                                 ),
-                                Positioned(
-                                  left: 40,
-                                  bottom: 10,
-                                  child: Column(
-                                    children: [
-                                      Text(
-                                        '${client['name']}',
-                                        style: TextStyle(
-                                          color: Colors.green,
-                                          fontSize: 15.0,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                      Text(
-                                        '450m',
-                                        style: TextStyle(
-                                          color: Colors.green,
-                                          fontSize: 15.0,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ));
-                    }).toList(),
-                  ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   if (_locationMessage != null)
                     MarkerLayer(
                       markers: [
@@ -316,14 +340,25 @@ class _RiderHomePageState extends State<RiderHomePage> {
                         ),
                       ],
                     ),
-                  if (_routePoints.isNotEmpty)
+                  if (_routePoints2Destination.isNotEmpty)
                     PolylineLayer(
                       polylines: [
                         Polyline(
                           strokeCap: StrokeCap.round,
-                          points: _routePoints,
+                          points: _routePoints2Destination,
                           strokeWidth: 6.0,
                           color: Colors.green,
+                        ),
+                      ],
+                    ),
+                  if (_routePoints2Client.isNotEmpty && !isRideStarted)
+                    PolylineLayer(
+                      polylines: [
+                        Polyline(
+                          strokeCap: StrokeCap.round,
+                          points: _routePoints2Client,
+                          strokeWidth: 6.0,
+                          color: Colors.red,
                         ),
                       ],
                     ),
@@ -346,13 +381,13 @@ class _RiderHomePageState extends State<RiderHomePage> {
                     });
                   } else if (details.velocity.pixelsPerSecond.dy > 0) {
                     setState(() {
-                      _bottomOffset = -260;
+                      _bottomOffset = -270;
                       _isDown = true;
                     });
                   }
                 },
                 child: Container(
-                  height: 350,
+                  height: 360,
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.only(
@@ -389,7 +424,7 @@ class _RiderHomePageState extends State<RiderHomePage> {
                             onPressed: () {
                               setState(() {
                                 _isDown = !_isDown;
-                                _bottomOffset = _bottomOffset == 0 ? -260 : 0;
+                                _bottomOffset = _bottomOffset == 0 ? -270 : 0;
                               });
                             },
                             icon: Icon(_isDown
@@ -500,17 +535,18 @@ class _RiderHomePageState extends State<RiderHomePage> {
                                               Radius.circular(30.0))),
                                       child: TextButton(
                                         onPressed: () {
-                                          Navigator.push(
-                                            context,
-                                            MaterialPageRoute(
-                                                builder: (context) =>
-                                                    currentBookingPage()),
-                                          );
+                                          setState(() {
+                                            isRideStarted = true;
+                                            _fetchRouteToDestination();
+                                          });
                                         },
                                         child: Text(
-                                          "Accept",
+                                          isRideStarted
+                                              ? "Get Paid"
+                                              : "Start Ride",
                                           style: TextStyle(
                                             color: Colors.white,
+                                            fontSize: 18.0,
                                           ),
                                         ),
                                       ),
@@ -531,13 +567,9 @@ class _RiderHomePageState extends State<RiderHomePage> {
               top: 0,
               child: Container(
                 width: screenWidth,
-                height: 200,
+                height: 100,
                 decoration: BoxDecoration(
                   color: const Color.fromARGB(255, 247, 52, 117),
-                  borderRadius: BorderRadius.only(
-                    bottomLeft: Radius.elliptical(40.0, 30.0),
-                    bottomRight: Radius.elliptical(40.0, 30.0),
-                  ),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black26, // Shadow color
@@ -549,112 +581,22 @@ class _RiderHomePageState extends State<RiderHomePage> {
                 ),
                 child: Stack(
                   children: [
-                    Positioned(
-                      left: 15,
-                      bottom: 10,
-                      child: Container(
-                        width: screenWidth < 410
-                            ? screenWidth * 0.7
-                            : screenWidth * 0.75,
-                        child:
-                            MySearchBar(hintText: "search all our services..."),
-                      ),
-                    ),
-                    Positioned(
-                      right: 15,
-                      bottom: 10,
-                      child: Padding(
-                        padding: const EdgeInsets.all(10.0),
-                        // width: screenWidth * 0.15,
-                        child: IconButton(
-                          icon: Icon(Icons.send_sharp),
-                          iconSize: 30,
-                          color: const Color.fromARGB(255, 255, 255, 255),
-                          onPressed: () {},
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      top: 20,
-                      child: GestureDetector(
-                        onTap: () {
-                          _scaffoldKey.currentState?.openDrawer();
-                          print("Drawer opened");
-                        },
-                        child: Padding(
-                          padding: const EdgeInsets.all(8.0),
-                          child: ConstrainedBox(
-                            constraints: BoxConstraints(
-                              maxWidth: 100.0, // Set the desired width
-                              maxHeight: 100.0, // Set the desired height
-                            ),
-                            child: Image.asset(
-                              'assets/images/appLogo.png',
-                              fit: BoxFit.contain,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      left: 110,
-                      bottom: screenWidth <= 400 ? 115 : 105,
+                    Center(
                       child: Text(
-                        "Grow with US",
+                        "Your Client now waiting.",
                         style: TextStyle(
                           color: Colors.white,
-                          fontSize: 30,
-                          fontWeight: FontWeight.w600,
+                          fontSize: 25.0,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
-                    ),
+                    )
                   ],
                 ),
               ),
             ),
           ],
         ),
-      ),
-      bottomNavigationBar: Stack(
-        clipBehavior:
-            Clip.none, // Allows the button to overflow outside the bar
-        children: [
-          Container(
-            height: 70,
-            color: const Color.fromARGB(255, 247, 52, 117),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                TextButton(
-                  onPressed: () {},
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.query_stats, color: Colors.white),
-                      Text(
-                        "Unattended Queries",
-                        style: TextStyle(color: Colors.white),
-                      ),
-                    ],
-                  ),
-                ),
-                TextButton(
-                  onPressed: () {},
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.notifications, color: Colors.white),
-                      Text(
-                        "Notifications",
-                        style: TextStyle(color: Colors.white),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
       drawer: MyDrawer(),
     );

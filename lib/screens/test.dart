@@ -1,53 +1,59 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
 
-class MyApp extends StatefulWidget {
+class WebSocketExample extends StatefulWidget {
   @override
-  _MyAppState createState() => _MyAppState();
+  _WebSocketExampleState createState() => _WebSocketExampleState();
 }
 
-class _MyAppState extends State<MyApp> {
-  Timer? _timer;
-  int _counter = 0;
+class _WebSocketExampleState extends State<WebSocketExample> {
+  late WebSocketChannel _channel;
+  String _message = "Waiting for messages...";
 
   @override
   void initState() {
     super.initState();
-    _startTimer();
+    // Connect to the WebSocket server
+    _channel = WebSocketChannel.connect(
+      Uri.parse('ws://192.168.147.184:8080'),
+    );
+
+    // Listen to incoming messages
+    _channel.stream.listen((message) {
+      setState(() {
+        _message = message;
+      });
+    });
   }
 
   @override
   void dispose() {
-    _timer?.cancel(); // Cancel the timer when the widget is disposed
+    _channel.sink.close(); // Close the connection
     super.dispose();
-  }
-
-  void _startTimer() {
-    _timer = Timer.periodic(Duration(seconds: 5), (timer) {
-      // Function called every 5 seconds
-      _myFunction();
-    });
-  }
-
-  void _myFunction() {
-    setState(() {
-      _counter++; // Example logic
-    });
-    print("Function called: Counter is $_counter");
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("Call Function Every 5 Seconds")),
+      appBar: AppBar(title: Text("WebSocket Example")),
       body: Center(
-        child: Text(
-          "Counter: $_counter",
-          style: TextStyle(fontSize: 24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              _message,
+              style: TextStyle(fontSize: 18),
+            ),
+            SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: () {
+                _channel.sink.add('Hello from Flutter!');
+              },
+              child: Text("Send Message"),
+            ),
+          ],
         ),
       ),
     );
   }
 }
-
-void main() => runApp(MaterialApp(home: MyApp()));

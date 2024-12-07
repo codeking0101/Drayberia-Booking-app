@@ -35,6 +35,25 @@ class _SecondRouteState extends State<SecondRoute> {
   List<LatLng> _routePoints = [];
   bool _isTypingForDeparture = true;
 
+  @override
+  void initState() {
+    super.initState();
+    _fetchFromLocalServer();
+  }
+
+  void _fetchFromLocalServer() async {
+    print("123");
+    final url = "http://192.168.147.184:5000/api/adminUser/userList";
+
+    try {
+      final response = await http.get(Uri.parse(url));
+      final results = json.decode(response.body);
+      print(results['data'][0]);
+    } catch (e) {
+      print("Error fetching autocomplete results: $e");
+    }
+  }
+
   void _searchNearestRiders() {
     if (!_isSelectedWell) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -204,6 +223,7 @@ class _SecondRouteState extends State<SecondRoute> {
   Widget build(BuildContext context) {
     double screenWidth = MediaQuery.of(context).size.width;
     double screenHeight = MediaQuery.of(context).size.height;
+    _fetchFromLocalServer();
     return Scaffold(
       key: _scaffoldKey,
       drawer: Container(
