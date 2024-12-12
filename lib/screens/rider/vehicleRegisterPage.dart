@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 import '../verifyPhonePage.dart';
+import 'package:http/http.dart' as http;
+import 'package:hive/hive.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'dart:convert';
 
 class VehicleRegisterPage extends StatefulWidget {
   @override
@@ -12,23 +16,57 @@ class _VehicleRegisterPageState extends State<VehicleRegisterPage> {
   String _vehicleNumber = '';
   bool _isAvailableNow = true;
 
-  void _register() {
+  Future<String> _getNickName() async {
+    var box = await Hive.openBox('userData');
+
+    String nickName = box.get("nickName");
+
+    print(nickName);
+
+    return nickName;
+  }
+
+  void _register() async {
     if (_formKey.currentState!.validate()) {
       _formKey.currentState!.save();
 
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-            builder: (context) => verifyPhonePage(
-                  isRider: true,
-                )),
-      );
-      print('Vehicle Type: $_selectedVehicleType');
-      print('Vehicle Number: $_vehicleNumber');
-      print('Available Now: $_isAvailableNow');
-      // ScaffoldMessenger.of(context).showSnackBar(
-      //   SnackBar(content: Text('Vehicle Registered Successfully!')),
-      // );
+      String nickName = await _getNickName();
+
+      final url = "http://88.222.213.227:5000/api/rider/vehicle";
+
+      try {
+        final response = await http.put(
+          Uri.parse(url),
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: json.encode({
+            "nickName": nickName,
+            "vehicleType": _selectedVehicleType == 'Bike'
+                ? 0
+                : _selectedVehicleType == 'Tricycle'
+                    ? 1
+                    : 2,
+            "vehicleNumber": _vehicleNumber,
+          }),
+        );
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(response.body)),
+        );
+
+        if (response.statusCode == 200) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+                builder: (context) => verifyPhonePage(
+                      isRider: true,
+                    )),
+          );
+        }
+      } catch (e) {
+        setState(() {});
+      }
     }
   }
 

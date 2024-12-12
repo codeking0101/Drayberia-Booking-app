@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
 import 'package:hive/hive.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
 import '../widgets/riderListDrawer.dart';
 import './homePage.dart';
+import './currentBookingPage.dart';
 
 class RiderShowPage extends StatefulWidget {
   @override
@@ -16,10 +17,13 @@ class RiderShowPage extends StatefulWidget {
 
 class _RiderShowPageState extends State<RiderShowPage> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  double _bottomOffset = -240;
+  final String _apiKey = 'AIzaSyCXtpXXc0yB7vewvbA2h-RQ0iUsw3Xwz5Y';
+  late WebSocketChannel _websocket;
+  double _bottomOffset = -270;
   bool _isDown = true;
   bool _isFirst = true;
   int selectedRiderIndex = -1;
+  String nickName = '';
 
   int vehicleType = -1;
 
@@ -28,54 +32,91 @@ class _RiderShowPageState extends State<RiderShowPage> {
   double priceBike = 0;
   double priceTricycle = 0;
   double priceCar = 0;
+  double price = 0;
+  double distance = 0;
+  int paymentMethod = 0;
 
-  final MapController _mapController = MapController();
+  late GoogleMapController _mapController;
   LatLng? _departurePosition;
   LatLng? _destinationPosition;
-  List<LatLng> _routePoints = [];
+  Polyline? _routePolyline;
 
   List<dynamic> riders = [];
-  List<dynamic> ridersInfo = [
-    {
-      "index": 0,
-      "name": "123123123",
-      "vehicleType": 0,
-      "reviewScore": 4.0,
-      "drivingCnt": 5,
-    },
-    {
-      "index": 1,
-      "name": "123123123123123123123123123",
-      "vehicleType": 1,
-      "reviewScore": 4.0,
-      "drivingCnt": 100,
-    },
-    {
-      "index": 2,
-      "name": "rider3",
-      "vehicleType": 2,
-      "reviewScore": 3.0,
-      "drivingCnt": 100,
-    },
-    {
-      "index": 3,
-      "name": "rider4",
-      "vehicleType": 0,
-      "reviewScore": 2.0,
-      "drivingCnt": 100,
-    }
-  ];
+  List<dynamic> ridersInfo = [];
 
-  void _setRiderIndex(int index) {
-    setState(() {
-      selectedRiderIndex = index;
-      _bottomOffset = 0;
-      _isDown = false;
+  Set<Marker> _markers = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _getBookingInfo();
+
+    // Connect to the WebSocket server
+    _websocket = WebSocketChannel.connect(
+      Uri.parse('ws://88.222.213.227:8080'),
+    );
+
+    // Listen to incoming messages
+    _websocket.stream.listen((message) {
+      final msg = json.decode(message);
+
+      if (msg['msgType'] == "accepted") {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+              builder: (context) => currentBookingPage(
+                    fromLat: _departurePosition!.latitude,
+                    fromLng: _departurePosition!.longitude,
+                    toLat: _destinationPosition!.latitude,
+                    toLng: _destinationPosition!.longitude,
+                    distance: distance,
+                    price: price,
+                    riderNickName: msg['nickName'],
+                  )),
+        );
+      }
     });
-    _mapController.move(riders[index]['position'], 15.0);
+
+    _getNickName();
   }
 
-  void _getRider() async {
+  @override
+  void dispose() {
+    super.dispose();
+    _websocket.sink.close();
+  }
+
+  void _getNickName() async {
+    var box = await Hive.openBox('userData');
+    String nickName = await box.get('nickName');
+    setState(() {
+      this.nickName = nickName;
+    });
+    String jsonMsg = json.encode({
+      "msgType": "hello",
+      "nickName": nickName,
+      "type": "client",
+    });
+    _websocket.sink.add(jsonMsg);
+  }
+
+  void _onMapCreated(GoogleMapController controller) {
+    _mapController = controller;
+    _mapController.animateCamera(
+      CameraUpdate.newLatLng(_departurePosition!),
+    );
+  }
+
+  void _declineBook() async {
+    String jsonMsg = json.encode({
+      "msgType": "decline",
+      "nickName": nickName,
+    });
+    _websocket.sink.add(jsonMsg);
+    Navigator.pop(context);
+  }
+
+  void _getBookingInfo() async {
     var box = await Hive.openBox('routeData');
     double departureLatitude = box.get("departureLatitude");
     double departureLongitude = box.get("departureLongitude");
@@ -85,77 +126,105 @@ class _RiderShowPageState extends State<RiderShowPage> {
     double priceBike = box.get('priceBike');
     double priceTricycle = box.get('priceTricycle');
     double priceCar = box.get('priceBike');
+    double price = box.get("price");
+    double distance = box.get("distance");
 
     String pickup = box.get("pickupLocation");
     String destination = box.get("destinationLocation");
 
     int tov = box.get("vehicleType"); //type of vehicle
 
-    _mapController.move(LatLng(departureLatitude, departureLongitude), 15.0);
-    print(departureLatitude);
+    print("asdfasdfasdfasdfasdfasdfasdfasdf");
+
     setState(() {
       _departurePosition = LatLng(departureLatitude, departureLongitude);
       _destinationPosition = LatLng(destinationLatitude, destinationLongitude);
 
+      _markers.add(
+        Marker(
+          markerId: MarkerId('departure'),
+          position: _departurePosition!,
+          infoWindow: InfoWindow(title: 'Departure'),
+          icon:
+              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+        ),
+      );
+      _markers.add(
+        Marker(
+          markerId: MarkerId('destination'),
+          position: _destinationPosition!,
+          infoWindow: InfoWindow(title: 'Destination'),
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRose),
+        ),
+      );
       _pickupLocation = pickup;
       _destinationLocation = destination;
 
       this.priceBike = priceBike;
       this.priceTricycle = priceTricycle;
       this.priceCar = priceCar;
+      this.price = price;
+      this.distance = distance;
 
       vehicleType = tov;
-
-      riders = [
-        {
-          "index": 0,
-          "position": LatLng(departureLatitude - 0.01, departureLongitude),
-        },
-        {
-          "index": 1,
-          "position": LatLng(departureLatitude + 0.01, departureLongitude),
-        },
-        {
-          "index": 2,
-          "position": LatLng(departureLatitude, departureLongitude + 0.01),
-        },
-        {
-          "index": 3,
-          "position": LatLng(departureLatitude, departureLongitude - 0.01),
-        },
-      ];
     });
     _fetchRoute();
   }
 
+  List<LatLng> _decodePolyline(String encoded) {
+    List<LatLng> points = [];
+    int index = 0, len = encoded.length;
+    int lat = 0, lng = 0;
+
+    while (index < len) {
+      int b, shift = 0, result = 0;
+      do {
+        b = encoded.codeUnitAt(index++) - 63;
+        result |= (b & 0x1F) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+      int dLat = (result & 1) != 0 ? ~(result >> 1) : (result >> 1);
+      lat += dLat;
+
+      shift = 0;
+      result = 0;
+      do {
+        b = encoded.codeUnitAt(index++) - 63;
+        result |= (b & 0x1F) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+      int dLng = (result & 1) != 0 ? ~(result >> 1) : (result >> 1);
+      lng += dLng;
+
+      points.add(LatLng(lat / 1E5, lng / 1E5));
+    }
+
+    return points;
+  }
+
   Future<void> _fetchRoute() async {
     final url =
-        "https://router.project-osrm.org/route/v1/driving/${_departurePosition!.longitude},${_departurePosition!.latitude};${_destinationPosition!.longitude},${_destinationPosition!.latitude}?overview=full&geometries=geojson";
+        'https://maps.googleapis.com/maps/api/directions/json?origin=${_departurePosition?.latitude},${_departurePosition?.longitude}&destination=${_destinationPosition?.latitude},${_destinationPosition?.longitude}&mode=driving&key=$_apiKey';
+    final response = await http.get(Uri.parse(url));
 
-    try {
-      final response = await http.get(Uri.parse(url));
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final coordinates = data['routes'][0]['geometry']['coordinates'];
-        final points = coordinates.map<LatLng>((coord) {
-          return LatLng(coord[1], coord[0]); // Reverse lat/lon order
-        }).toList();
-
-        setState(() {
-          _routePoints = points;
-        });
-      } else {
-        print("Failed to fetch route: ${response.body}");
-      }
-    } catch (e) {
-      print("Error fetching route: $e");
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      final points = data['routes'][0]['overview_polyline']['points'];
+      final polylinePoints = _decodePolyline(points);
+      setState(() {
+        _routePolyline = Polyline(
+          polylineId: PolylineId('route'),
+          points: polylinePoints,
+          color: Colors.blue,
+          width: 4,
+        );
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
     if (_isFirst) {
-      _getRider();
       _isFirst = false;
     }
     double screenWidth = MediaQuery.of(context).size.width;
@@ -184,107 +253,21 @@ class _RiderShowPageState extends State<RiderShowPage> {
         child: Stack(
           children: [
             Center(
-              child: FlutterMap(
-                mapController: _mapController,
-                options: MapOptions(
-                  initialCenter: LatLng(14.590449, 120.980362),
-                  initialZoom: 16.0,
-                  maxZoom: 18.0,
-                  minZoom: 5.0,
-                  cameraConstraint: CameraConstraint.contain(
-                    bounds: LatLngBounds(
-                        LatLng(4.2158, 116.5891), LatLng(21.1224, 126.6056)),
-                  ),
+              child: GoogleMap(
+                initialCameraPosition: CameraPosition(
+                  target: LatLng(11.55, 124.75), // Default location
+                  zoom: 10,
                 ),
-                children: [
-                  TileLayer(
-                    urlTemplate:
-                        "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-                    // subdomains: ['a', 'b', 'c'],
-                  ),
-                  MarkerLayer(
-                    markers: riders.map((rider) {
-                      int index = rider['index'];
-                      return Marker(
-                          width: 80.0,
-                          height: 80.0,
-                          point: rider['position'],
-                          child: GestureDetector(
-                            onTap: () {
-                              setState(() {
-                                selectedRiderIndex = index;
-                                _mapController.move(rider['position'], 15.0);
-                              });
-                            },
-                            child: Stack(
-                              children: [
-                                Positioned(
-                                  child: Icon(
-                                    Icons.location_on,
-                                    color:
-                                        const Color.fromARGB(255, 235, 140, 32),
-                                    size: 60.0,
-                                  ),
-                                ),
-                                Positioned(
-                                  left: 40,
-                                  bottom: 10,
-                                  child: Text(
-                                    '${index + 1}',
-                                    style: TextStyle(
-                                      color: Colors.green,
-                                      fontSize: 30.0,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ));
-                    }).toList(),
-                  ),
-                  if (_departurePosition != null)
-                    MarkerLayer(
-                      markers: [
-                        Marker(
-                          width: 80.0,
-                          height: 80.0,
-                          point: _departurePosition!,
-                          child: Icon(
-                            Icons.location_pin,
-                            color: Colors.blue,
-                            size: 60.0,
-                          ),
-                        ),
-                      ],
-                    ),
-                  if (_destinationPosition != null)
-                    MarkerLayer(
-                      markers: [
-                        Marker(
-                          width: 80.0,
-                          height: 80.0,
-                          point: _destinationPosition!,
-                          child: Icon(
-                            Icons.location_pin,
-                            color: Colors.red,
-                            size: 60.0,
-                          ),
-                        ),
-                      ],
-                    ),
-                  if (_routePoints.isNotEmpty)
-                    PolylineLayer(
-                      polylines: [
-                        Polyline(
-                          strokeCap: StrokeCap.round,
-                          points: _routePoints,
-                          strokeWidth: 6.0,
-                          color: Colors.green,
-                        ),
-                      ],
-                    ),
-                ],
+                onMapCreated: _onMapCreated,
+                myLocationEnabled: true,
+                markers: _markers,
+                // cameraTargetBounds: CameraTargetBounds(philippinesBounds),
+                polylines: _routePolyline != null
+                    ? {
+                        _routePolyline!,
+                      }
+                    : {},
+                // onTap: _onMapTapped,
               ),
             ),
             AnimatedPositioned(
@@ -294,7 +277,7 @@ class _RiderShowPageState extends State<RiderShowPage> {
               left: 0,
               right: 0,
               child: Container(
-                height: 330,
+                height: 360,
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.only(
@@ -331,7 +314,7 @@ class _RiderShowPageState extends State<RiderShowPage> {
                           onPressed: () {
                             setState(() {
                               _isDown = !_isDown;
-                              _bottomOffset = _bottomOffset == 0 ? -240 : 0;
+                              _bottomOffset = _bottomOffset == 0 ? -270 : 0;
                             });
                           },
                           icon: Icon(_isDown
@@ -423,28 +406,42 @@ class _RiderShowPageState extends State<RiderShowPage> {
                                 mainAxisAlignment:
                                     MainAxisAlignment.spaceAround,
                                 children: [
-                                  Icon(
-                                    Icons.attach_money,
-                                    color: Colors.green,
-                                    size: 40.0,
-                                  ),
-                                  Column(
-                                    children: [
-                                      Text(
-                                        vehicleType == 0
-                                            ? 'PHP $priceBike'
-                                            : vehicleType == 1
-                                                ? 'PHP $priceTricycle'
-                                                : 'PHP $priceCar',
-                                        style: TextStyle(fontSize: 16.0),
-                                      ),
-                                      Container(
-                                        width: screenWidth * 0.7,
-                                      ),
-                                    ],
-                                  ),
+                                  Text(
+                                      "Amount: PHP ${double.parse(price.toStringAsFixed(2))}"),
+                                  Text(
+                                      "Distance: ${double.parse((distance / 1000).toStringAsFixed(2))}km"),
                                 ],
                               ),
+                              SizedBox(
+                                height: 15.0,
+                              ),
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceEvenly,
+                                children: [
+                                  Container(
+                                    width: screenWidth * 0.6,
+                                    decoration: BoxDecoration(
+                                        color: Colors.pink,
+                                        borderRadius: BorderRadius.all(
+                                            Radius.circular(30.0))),
+                                    child: TextButton(
+                                      onPressed: () {
+                                        setState(() {
+                                          _bottomOffset = -370;
+                                        });
+                                        _declineBook();
+                                      },
+                                      child: Text(
+                                        "Decline",
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              )
                             ],
                           ),
                         ),

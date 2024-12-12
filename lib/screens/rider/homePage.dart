@@ -1,12 +1,15 @@
+import 'package:DRAYBERYA/widgets/riderDrawer.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
 import 'package:permission_handler/permission_handler.dart';
-import '../../widgets/drawer.dart';
+import '../../widgets/riderDrawer.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../../widgets/searchBar.dart';
 import './currentBookingPage.dart';
 import 'package:http/http.dart' as http;
+import 'package:web_socket_channel/web_socket_channel.dart';
+import 'package:hive/hive.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'dart:convert';
 import 'dart:async';
 
@@ -16,18 +19,27 @@ class RiderHomePage extends StatefulWidget {
 }
 
 class _RiderHomePageState extends State<RiderHomePage> {
-  double _totalDragDistance = 0.0;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  late WebSocketChannel _websocket;
+  late GoogleMapController _mapController;
+  final String _apiKey = 'AIzaSyCXtpXXc0yB7vewvbA2h-RQ0iUsw3Xwz5Y';
+
   Timer? _timer;
-  MapController _mapController = MapController();
+  double _leftOffset = -300;
   double _bottomOffset = -400;
   bool _isDown = false;
   bool isDisposed = false;
   int _selectedIndex = 0;
-  LatLng? _locationMessage;
+  LatLng? _myLocation;
+  String nickName = '';
+  String clientNickName = '';
+  int _newBookingCnt = 0;
+
+  double _price = 0;
+  double _distance = 0;
   bool isFirst = true;
 
-  List<LatLng> _routePoints = [];
+  Set<Marker> _markers = {};
 
   String clientDeparture = '';
   String clientDestination = '';
@@ -42,9 +54,144 @@ class _RiderHomePageState extends State<RiderHomePage> {
     super.initState();
     _checkPermissions();
     _getCurrentLocation();
+    _fetchwaitingClients();
     _timer = Timer.periodic(Duration(seconds: 5), (timer) {
       _getCurrentLocation();
     });
+
+    // Connect to the WebSocket server
+    _websocket = WebSocketChannel.connect(
+      Uri.parse('ws://88.222.213.227:8080'),
+    );
+
+    // Listen to incoming messages
+    _websocket.stream.listen((message) {
+      final msg = json.decode(message);
+
+      print("==================>>>>>>>>>>>>>>>>>>>");
+      print(msg['msgType'] == "accepted");
+      print("==================>>>>>>>>>>>>>>>>>>>");
+
+      if (msg['msgType'] == "newBooking") {
+        setState(() {
+          waitingClients.add(msg);
+
+          for (int i = 0; i < waitingClients.length; i++) {
+            setState(() {
+              _markers.add(
+                Marker(
+                  onTap: () {
+                    setState(() {
+                      _mapController.animateCamera(
+                        CameraUpdate.newLatLng(LatLng(
+                            waitingClients[i]['fromLat'],
+                            waitingClients[i]['fromLng'])),
+                      );
+                      _bottomOffset = 0;
+                      _leftOffset = -300;
+                      _isDown = false;
+                      clientDeparturePosition = LatLng(
+                          waitingClients[i]['fromLat'],
+                          waitingClients[i]['fromLng']);
+                      clientDestinationPosition = LatLng(
+                          waitingClients[i]['toLat'],
+                          waitingClients[i]['toLng']);
+                      _setClientDeparture(waitingClients[i]['fromLat'],
+                          waitingClients[i]['fromLng']);
+                      _setClientDestination(waitingClients[i]['toLat'],
+                          waitingClients[i]['toLng']);
+                      _distance = waitingClients[i]['distance'].toDouble();
+                      _price = waitingClients[i]['price'].toDouble();
+                      clientNickName = waitingClients[i]['nickName'];
+                    });
+                    setState(() {
+                      _selectedIndex = i;
+                    });
+                  },
+                  markerId: MarkerId('client$i'),
+                  position: LatLng(waitingClients[i]['fromLat'],
+                      waitingClients[i]['fromLng']),
+                  infoWindow: InfoWindow(title: waitingClients[i]['nickName']),
+                  icon: BitmapDescriptor.defaultMarkerWithHue(
+                      BitmapDescriptor.hueOrange),
+                ),
+              );
+            });
+          }
+          _newBookingCnt++;
+        });
+        print(msg);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('New booking!')),
+        );
+      } else if (msg['msgType'] == "accepted") {
+        print("==================>>>>>>>>>>>>>>>>>>>");
+        print(waitingClients.length);
+        print("==================>>>>>>>>>>>>>>>>>>>");
+
+        for (int i = 0; i < waitingClients.length; i++) {
+          if (waitingClients[i]['nickName'] == msg['clientNickName']) {
+            setState(() {
+              waitingClients.removeAt(i);
+            });
+          }
+        }
+        if (_newBookingCnt > 0) {
+          _newBookingCnt--;
+        }
+        print(
+            "asdfdvadshfkjlahdslfiuyhlqijehwlkjfbhlkj-----------------------------");
+
+        print(waitingClients);
+
+        setState(() {
+          _markers.clear();
+        });
+
+        for (int i = 0; i < waitingClients.length; i++) {
+          setState(() {
+            _markers.add(
+              Marker(
+                onTap: () {
+                  setState(() {
+                    _mapController.animateCamera(
+                      CameraUpdate.newLatLng(LatLng(
+                          waitingClients[i]['fromLat'],
+                          waitingClients[i]['fromLng'])),
+                    );
+                    _bottomOffset = 0;
+                    _leftOffset = -300;
+                    _isDown = false;
+                    clientDeparturePosition = LatLng(
+                        waitingClients[i]['fromLat'],
+                        waitingClients[i]['fromLng']);
+                    clientDestinationPosition = LatLng(
+                        waitingClients[i]['toLat'], waitingClients[i]['toLng']);
+                    _setClientDeparture(waitingClients[i]['fromLat'],
+                        waitingClients[i]['fromLng']);
+                    _setClientDestination(
+                        waitingClients[i]['toLat'], waitingClients[i]['toLng']);
+                    _distance = waitingClients[i]['distance'].toDouble();
+                    _price = waitingClients[i]['price'].toDouble();
+                    clientNickName = waitingClients[i]['nickName'];
+                  });
+                  setState(() {
+                    _selectedIndex = i;
+                  });
+                },
+                markerId: MarkerId('client$i'),
+                position: LatLng(
+                    waitingClients[i]['fromLat'], waitingClients[i]['fromLng']),
+                infoWindow: InfoWindow(title: waitingClients[i]['nickName']),
+                icon: BitmapDescriptor.defaultMarkerWithHue(
+                    BitmapDescriptor.hueOrange),
+              ),
+            );
+          });
+        }
+      }
+    });
+    _getNickName();
   }
 
   @override
@@ -52,6 +199,162 @@ class _RiderHomePageState extends State<RiderHomePage> {
     _timer?.cancel();
     isDisposed = true;
     super.dispose();
+    _websocket.sink.close();
+  }
+
+  void _getNickName() async {
+    var box = await Hive.openBox('userData');
+    String nickName = await box.get('nickName');
+    setState(() {
+      this.nickName = nickName;
+    });
+    String jsonMsg = json.encode({
+      "msgType": "hello",
+      "nickName": nickName,
+      "type": "rider",
+    });
+    _websocket.sink.add(jsonMsg);
+  }
+
+  void _fetchwaitingClients() async {
+    final url = "http://88.222.213.227:5000/api/client/waitingClients";
+
+    try {
+      final response = await http.get(Uri.parse(url), headers: {
+        "Content-Type": "application/json",
+      });
+
+      final waitingClients = json.decode(response.body);
+
+      for (int i = 0; i < waitingClients['awaitingBooking'].length; i++) {
+        setState(() {
+          _markers.add(
+            Marker(
+              onTap: () {
+                setState(() {
+                  _mapController.animateCamera(
+                    CameraUpdate.newLatLng(LatLng(
+                        waitingClients['awaitingBooking'][i]['fromLat'],
+                        waitingClients['awaitingBooking'][i]['fromLng'])),
+                  );
+                  _bottomOffset = 0;
+                  _leftOffset = -300;
+                  _isDown = false;
+                  clientDeparturePosition = LatLng(
+                      waitingClients['awaitingBooking'][i]['fromLat'],
+                      waitingClients['awaitingBooking'][i]['fromLng']);
+                  clientDestinationPosition = LatLng(
+                      waitingClients['awaitingBooking'][i]['toLat'],
+                      waitingClients['awaitingBooking'][i]['toLng']);
+                  _setClientDeparture(
+                      waitingClients['awaitingBooking'][i]['fromLat'],
+                      waitingClients['awaitingBooking'][i]['fromLng']);
+                  _setClientDestination(
+                      waitingClients['awaitingBooking'][i]['toLat'],
+                      waitingClients['awaitingBooking'][i]['toLng']);
+                  _distance = waitingClients['awaitingBooking'][i]['distance']
+                      .toDouble();
+                  _price =
+                      waitingClients['awaitingBooking'][i]['price'].toDouble();
+                  clientNickName =
+                      waitingClients['awaitingBooking'][i]['nickName'];
+                });
+                setState(() {
+                  _selectedIndex = i;
+                });
+              },
+              markerId: MarkerId('client$i'),
+              position: LatLng(waitingClients['awaitingBooking'][i]['fromLat'],
+                  waitingClients['awaitingBooking'][i]['fromLng']),
+              infoWindow: InfoWindow(
+                  title: waitingClients['awaitingBooking'][i]['nickName']),
+              icon: BitmapDescriptor.defaultMarkerWithHue(
+                  BitmapDescriptor.hueOrange),
+            ),
+          );
+        });
+      }
+      setState(() {
+        this.waitingClients = waitingClients['awaitingBooking'];
+      });
+    } catch (e) {
+      print("Error fetching autocomplete results: $e");
+    }
+  }
+
+  void _saveCurrentBooking() async {
+    final url = "http://88.222.213.227:5000/api/rider/bookRide";
+
+    try {
+      final response = await http.post(Uri.parse(url),
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: json.encode({
+            "nickName": nickName,
+            "clientNickName": clientNickName,
+            "fromLat": clientDeparturePosition?.latitude,
+            "fromLng": clientDeparturePosition?.longitude,
+            "toLat": clientDestinationPosition?.latitude,
+            "toLng": clientDestinationPosition?.longitude,
+            "fromLocation": clientDeparture,
+            "toLocation": clientDestination,
+            "distance": _distance.toDouble(),
+            "price": _price.toDouble(),
+            "vehicleType": 0,
+            "paymentMethod": 0,
+          }));
+    } catch (e) {
+      print("Error fetching autocomplete results: $e");
+    }
+  }
+
+  void _payForAccept(double amount) async {
+    final url = "http://88.222.213.227:5000/api/rider/payforAccept";
+
+    try {
+      final response = await http.post(Uri.parse(url),
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: json.encode({
+            "nickName": nickName,
+            "moneyValue": amount,
+          }));
+
+      print(response.body);
+
+      final result = json.decode(response.body);
+      if (response.statusCode == 200) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+              builder: (context) => currentBookingPage(
+                    fromLat: clientDeparturePosition!.latitude,
+                    fromLng: clientDeparturePosition!.longitude,
+                    toLat: clientDestinationPosition!.latitude,
+                    toLng: clientDestinationPosition!.longitude,
+                    distance: _distance,
+                    price: _price,
+                    clientNickName: this.clientNickName,
+                  )),
+        );
+
+        _saveCurrentBooking();
+        String jsonMsg = json.encode({
+          "msgType": "accept",
+          "clientNickName": clientNickName,
+          "nickName": nickName,
+        });
+        _websocket.sink.add(jsonMsg);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result['msg'])),
+        );
+      }
+    } catch (e) {
+      print("Error fetching autocomplete results: $e");
+    }
   }
 
   Future<void> _checkPermissions() async {
@@ -96,83 +399,44 @@ class _RiderHomePageState extends State<RiderHomePage> {
 
       if (!isDisposed) {
         setState(() {
-          _locationMessage = LatLng(position.latitude, position.longitude);
-
-          waitingClients = [
-            {
-              "name": "Client1",
-              "index": 0,
-              "position": LatLng(position.latitude - 0.01, position.longitude),
-            },
-            {
-              "name": "Client2",
-              "index": 1,
-              "position": LatLng(position.latitude + 0.01, position.longitude),
-            },
-            {
-              "name": "Client3",
-              "index": 2,
-              "position": LatLng(position.latitude, position.longitude + 0.01),
-            },
-            {
-              "name": "Client4",
-              "index": 3,
-              "position": LatLng(position.latitude, position.longitude - 0.01),
-            },
-          ];
-          print(_locationMessage);
+          _myLocation = LatLng(position.latitude, position.longitude);
         });
       }
       if (isFirst) {
         isFirst = false;
-        _mapController.move(
-            LatLng(position.latitude, position.longitude), 16.0);
+
+        _mapController.animateCamera(
+          CameraUpdate.newLatLng(LatLng(position.latitude, position.longitude)),
+        );
       }
     } catch (e) {
       print("Error: $e");
     }
   }
 
-  Future<void> _fetchRoute() async {
-    final url =
-        "https://router.project-osrm.org/route/v1/driving/${clientDeparturePosition?.longitude},${clientDeparturePosition?.latitude};${clientDestinationPosition?.longitude},${clientDestinationPosition?.latitude}?overview=full&geometries=geojson";
-
-    try {
-      final response = await http.get(Uri.parse(url));
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final coordinates = data['routes'][0]['geometry']['coordinates'];
-        final points = coordinates.map<LatLng>((coord) {
-          return LatLng(coord[1], coord[0]); // Reverse lat/lon order
-        }).toList();
-        setState(() {
-          _routePoints = points;
-        });
-      } else {
-        print("Failed to fetch route: ${response.body}");
-      }
-    } catch (e) {
-      print("Error fetching route: $e");
-    }
+  void _onMapCreated(GoogleMapController controller) {
+    _mapController = controller;
   }
 
   Future<String> _getNearestAddress(double latitude, double longitude) async {
     final url =
-        "https://nominatim.openstreetmap.org/reverse?lat=$latitude&lon=$longitude&format=json";
+        'https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=$_apiKey';
 
     try {
       final response = await http.get(Uri.parse(url));
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        String address = data['display_name'] ?? "No address found";
+        String address =
+            data['results'][0]['formatted_address'] ?? "No address found";
         return address;
       } else {
         print("Error: ${response.statusCode}");
+        return '';
       }
     } catch (e) {
       print("Error fetching address: $e");
+      return '';
     }
-    return ("error on fetching address");
   }
 
   Future<void> _setClientDeparture(double latitude, double longitude) async {
@@ -192,6 +456,7 @@ class _RiderHomePageState extends State<RiderHomePage> {
   @override
   Widget build(BuildContext context) {
     double screenWidth = MediaQuery.of(context).size.width;
+    double screenHeigh = MediaQuery.of(context).size.height;
     return Scaffold(
       key: _scaffoldKey,
       body: Container(
@@ -201,133 +466,26 @@ class _RiderHomePageState extends State<RiderHomePage> {
         child: Stack(
           children: [
             Center(
-              child: FlutterMap(
-                mapController: _mapController,
-                options: MapOptions(
-                  initialCenter: LatLng(14.590449, 120.980362),
-                  initialZoom: 16.0,
-                  maxZoom: 18.0,
-                  minZoom: 5.0,
-                  cameraConstraint: CameraConstraint.contain(
-                    bounds: LatLngBounds(
-                        LatLng(4.2158, 116.5891), LatLng(21.1224, 126.6056)),
-                  ),
-                  onTap: (tapPosition, point) {},
+              child: GoogleMap(
+                onTap: (pointer) {
+                  setState(() {
+                    _leftOffset = -300;
+                  });
+                },
+                initialCameraPosition: CameraPosition(
+                  target: LatLng(11.55, 124.75), // Default location
+                  zoom: 10,
                 ),
-                children: [
-                  TileLayer(
-                    urlTemplate:
-                        "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-                    subdomains: ['a', 'b', 'c'],
-                  ),
-                  MarkerLayer(
-                    markers: waitingClients.map((client) {
-                      int index = client['index'];
-                      return Marker(
-                          width: 100.0,
-                          height: 80.0,
-                          point: client['position'],
-                          child: GestureDetector(
-                            onTap: () {
-                              setState(() {
-                                _mapController.move(client['position'], 15.0);
-                                _bottomOffset = 0;
-                                _isDown = false;
-                                clientDeparturePosition = client['position'];
-                                clientDestinationPosition = LatLng(
-                                    client['position'].latitude - 0.015,
-                                    client['position'].longitude);
-                                _setClientDeparture(client['position'].latitude,
-                                    client['position'].longitude);
-                                _setClientDestination(
-                                    client['position'].latitude - 0.015,
-                                    client['position'].longitude);
-                              });
-                            },
-                            child: Stack(
-                              children: [
-                                Positioned(
-                                  child: Icon(
-                                    Icons.location_on,
-                                    color:
-                                        const Color.fromARGB(255, 235, 140, 32),
-                                    size: 60.0,
-                                  ),
-                                ),
-                                Positioned(
-                                  left: 40,
-                                  bottom: 10,
-                                  child: Column(
-                                    children: [
-                                      Text(
-                                        '${client['name']}',
-                                        style: TextStyle(
-                                          color: Colors.green,
-                                          fontSize: 15.0,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                      Text(
-                                        '450m',
-                                        style: TextStyle(
-                                          color: Colors.green,
-                                          fontSize: 15.0,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ));
-                    }).toList(),
-                  ),
-                  if (_locationMessage != null)
-                    MarkerLayer(
-                      markers: [
-                        Marker(
-                          width: 80.0,
-                          height: 80.0,
-                          point: _locationMessage!,
-                          child: Stack(
-                            children: [
-                              Positioned(
-                                child: Icon(
-                                  Icons.location_on,
-                                  color: Colors.blue,
-                                  size: 60.0,
-                                ),
-                              ),
-                              Positioned(
-                                left: 40,
-                                bottom: 10,
-                                child: Text(
-                                  'You',
-                                  style: TextStyle(
-                                    color: Colors.blue,
-                                    fontSize: 20.0,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  if (_routePoints.isNotEmpty)
-                    PolylineLayer(
-                      polylines: [
-                        Polyline(
-                          strokeCap: StrokeCap.round,
-                          points: _routePoints,
-                          strokeWidth: 6.0,
-                          color: Colors.green,
-                        ),
-                      ],
-                    ),
-                ],
+                onMapCreated: _onMapCreated,
+                myLocationEnabled: true,
+                markers: _markers,
+                // cameraTargetBounds: CameraTargetBounds(philippinesBounds),
+                // polylines: {
+                //   if (_routePoints2Client != null && !isRideStarted)
+                //     _routePoints2Client!,
+                //   if (_routePoints2Destination != null)
+                //     _routePoints2Destination!,
+                // },
               ),
             ),
             AnimatedPositioned(
@@ -338,7 +496,6 @@ class _RiderHomePageState extends State<RiderHomePage> {
               right: 0,
               child: GestureDetector(
                 onVerticalDragEnd: (details) {
-                  _totalDragDistance = 0;
                   if (details.velocity.pixelsPerSecond.dy < 0) {
                     setState(() {
                       _bottomOffset = 0;
@@ -481,8 +638,10 @@ class _RiderHomePageState extends State<RiderHomePage> {
                                   mainAxisAlignment:
                                       MainAxisAlignment.spaceAround,
                                   children: [
-                                    Text("Amount: PHP 52"),
-                                    Text("Distance: 2.75km"),
+                                    Text(
+                                        "Amount: PHP ${double.parse(_price.toStringAsFixed(2))}"),
+                                    Text(
+                                        "Distance: ${double.parse((_distance / 1000).toStringAsFixed(2))}km"),
                                   ],
                                 ),
                                 SizedBox(
@@ -500,12 +659,10 @@ class _RiderHomePageState extends State<RiderHomePage> {
                                               Radius.circular(30.0))),
                                       child: TextButton(
                                         onPressed: () {
-                                          Navigator.push(
-                                            context,
-                                            MaterialPageRoute(
-                                                builder: (context) =>
-                                                    currentBookingPage()),
-                                          );
+                                          setState(() {
+                                            _bottomOffset = -400;
+                                          });
+                                          _payForAccept(_price);
                                         },
                                         child: Text(
                                           "Accept",
@@ -612,6 +769,137 @@ class _RiderHomePageState extends State<RiderHomePage> {
                 ),
               ),
             ),
+            AnimatedPositioned(
+              duration: Duration(milliseconds: 300),
+              curve: Curves.easeInOut,
+              left: _leftOffset,
+              child: Stack(
+                children: [
+                  GestureDetector(
+                    onHorizontalDragEnd: (details) {
+                      if (details.velocity.pixelsPerSecond.dx < 0) {
+                        setState(() {
+                          _leftOffset = -300;
+                        });
+                      }
+                    },
+                    child: Container(
+                      height: screenHeigh - 70,
+                      width: 300,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.only(
+                          topLeft: Radius.circular(0),
+                          topRight: Radius.circular(0),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black26,
+                            blurRadius: 10,
+                            offset: Offset(0, -10),
+                          ),
+                        ],
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(0.0),
+                        child: ListView.builder(
+                          itemCount: waitingClients.length,
+                          itemBuilder: (context, index) {
+                            return GestureDetector(
+                              onTap: () {
+                                setState(() {
+                                  _mapController.animateCamera(
+                                    CameraUpdate.newLatLng(LatLng(
+                                        waitingClients[index]['fromLat'],
+                                        waitingClients[index]['fromLng'])),
+                                  );
+                                  _bottomOffset = 0;
+                                  _leftOffset = -300;
+                                  _isDown = false;
+                                  clientDeparturePosition = LatLng(
+                                      waitingClients[index]['fromLat'],
+                                      waitingClients[index]['fromLng']);
+                                  clientDestinationPosition = LatLng(
+                                      waitingClients[index]['toLat'],
+                                      waitingClients[index]['toLng']);
+                                  _setClientDeparture(
+                                      waitingClients[index]['fromLat'],
+                                      waitingClients[index]['fromLng']);
+                                  _setClientDestination(
+                                      waitingClients[index]['toLat'],
+                                      waitingClients[index]['toLng']);
+                                  _distance = waitingClients[index]['distance']
+                                      .toDouble();
+                                  _price =
+                                      waitingClients[index]['price'].toDouble();
+                                  clientNickName =
+                                      waitingClients[index]['nickName'];
+                                });
+                                setState(() {
+                                  _selectedIndex = index;
+                                });
+                              },
+                              child: Container(
+                                height: 75.0,
+                                padding: EdgeInsets.all(15.0),
+                                decoration: BoxDecoration(
+                                  color: _selectedIndex == index
+                                      ? const Color.fromARGB(255, 153, 145, 148)
+                                      : (index % 2 == 0
+                                          ? const Color.fromARGB(
+                                              255, 223, 221, 221)
+                                          : const Color.fromARGB(
+                                              255, 238, 234, 234)),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      "${index + 1}",
+                                      style: TextStyle(
+                                        fontSize: 15.0,
+                                        fontWeight: FontWeight.w600,
+                                        color: _selectedIndex == index
+                                            ? Colors.white
+                                            : const Color.fromARGB(
+                                                255, 58, 51, 51),
+                                      ),
+                                    ),
+                                    Text(
+                                      "${waitingClients[index]['nickName']}",
+                                      style: TextStyle(
+                                        fontSize: 15.0,
+                                        fontWeight: FontWeight.w600,
+                                        color: _selectedIndex == index
+                                            ? Colors.white
+                                            : const Color.fromARGB(
+                                                255, 58, 51, 51),
+                                      ),
+                                    ),
+                                    Text(
+                                      "${double.parse((waitingClients[index]['distance'] / 1000).toStringAsFixed(2))}km",
+                                      style: TextStyle(
+                                        fontSize: 15.0,
+                                        fontWeight: FontWeight.w600,
+                                        color: _selectedIndex == index
+                                            ? Colors.white
+                                            : const Color.fromARGB(
+                                                255, 58, 51, 51),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
       ),
@@ -626,11 +914,50 @@ class _RiderHomePageState extends State<RiderHomePage> {
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
                 TextButton(
-                  onPressed: () {},
+                  onPressed: () {
+                    setState(() {
+                      _newBookingCnt = 0;
+                      _leftOffset = 0;
+                    });
+                  },
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.query_stats, color: Colors.white),
+                      Container(
+                        width: 65,
+                        child: Stack(
+                          children: [
+                            Center(
+                              child:
+                                  Icon(Icons.query_stats, color: Colors.white),
+                            ),
+                            if (_newBookingCnt > 0)
+                              Positioned(
+                                right: 0,
+                                child: Container(
+                                  width: 20,
+                                  height: 20,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.all(
+                                      Radius.circular(10.0),
+                                    ),
+                                  ),
+                                  child: Stack(
+                                    children: [
+                                      Center(
+                                        child: Text(
+                                          "$_newBookingCnt",
+                                          style: TextStyle(color: Colors.red),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              )
+                          ],
+                        ),
+                      ),
                       Text(
                         "Unattended Queries",
                         style: TextStyle(color: Colors.white),
@@ -656,7 +983,7 @@ class _RiderHomePageState extends State<RiderHomePage> {
           ),
         ],
       ),
-      drawer: MyDrawer(),
+      drawer: RiderDrawer(),
     );
   }
 }

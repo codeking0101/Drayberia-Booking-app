@@ -1,10 +1,142 @@
+import 'package:DRAYBERYA/screens/riderShowPage.dart';
 import 'package:flutter/material.dart';
 import '../widgets/drawer.dart';
 import '../widgets/searchBar.dart';
+import './currentBookingPage.dart';
 import 'rideBookingPage.dart';
+import 'package:http/http.dart' as http;
+import 'package:hive/hive.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'dart:convert';
 
-class myHomePage extends StatelessWidget {
+class myHomePage extends StatefulWidget {
+  @override
+  _myHomePageState createState() => _myHomePageState();
+}
+
+class _myHomePageState extends State<myHomePage> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  bool hasRideBooking = false;
+  bool hasActiveBooking = false;
+  String nickName = '';
+
+  void initState() {
+    super.initState();
+    _getNickName();
+  }
+
+  void _getNickName() async {
+    var box = await Hive.openBox('userData');
+    String nickName = await box.get('nickName');
+    setState(() {
+      this.nickName = nickName;
+    });
+
+    // _fetchHasRideBooking();
+  }
+
+  void _setHiveData() async {}
+
+  void _fetchHasRideBooking() async {
+    final url = "http://88.222.213.227:5000/api/client/hasActiveBooking";
+
+    try {
+      final response = await http.post(
+        Uri.parse(url),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: json.encode({
+          "nickName": nickName,
+        }),
+      );
+      final result = json.decode(response.body);
+      if (result['msg'] == 1) {
+        setState(() {
+          this.hasRideBooking = true;
+        });
+      } else if (result['msg'] == 2) {
+        setState(() {
+          this.hasActiveBooking = true;
+        });
+      }
+    } catch (e) {
+      print("Error fetching autocomplete results: $e");
+    }
+  }
+
+  void _activeBookingOpen() async {
+    final url = "http://88.222.213.227:5000/api/client/hasActiveBooking";
+
+    try {
+      final response = await http.post(
+        Uri.parse(url),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: json.encode({
+          "nickName": nickName,
+        }),
+      );
+      final result = json.decode(response.body);
+      if (result['msg'] > 0) {
+        var box = await Hive.openBox('routeData');
+        await box.put('departureLongitude', result['ActiveBooking']['fromLng']);
+        await box.put('departureLatitude', result['ActiveBooking']['fromLat']);
+
+        await box.put('destinationLongitude', result['ActiveBooking']['toLng']);
+        await box.put('destinationLatitude', result['ActiveBooking']['toLat']);
+
+        await box.put(
+            'pickupLocation', result['ActiveBooking']['departureLocation']);
+        await box.put('destinationLocation',
+            result['ActiveBooking']['destinationLocation']);
+
+        await box.put('priceBike', result['ActiveBooking']['price'].toDouble());
+        await box.put(
+            'priceTricycle', result['ActiveBooking']['price'].toDouble());
+        await box.put('priceCar', result['ActiveBooking']['price'].toDouble());
+
+        await box.put(
+            'distance', result['ActiveBooking']['distance'].toDouble());
+
+        await box.put('price', result['ActiveBooking']['price'].toDouble());
+
+        await box.put('paymentMethod', 0);
+        await box.put('vehicleType', 0);
+        if (result['msg'] == 1) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+                builder: (context) => currentBookingPage(
+                      fromLat: result['ActiveBooking']['fromLat'],
+                      fromLng: result['ActiveBooking']['fromLng'],
+                      toLat: result['ActiveBooking']['toLat'],
+                      toLng: result['ActiveBooking']['toLng'],
+                      distance: result['ActiveBooking']['distance'].toDouble(),
+                      price: result['ActiveBooking']['price'].toDouble(),
+                      riderNickName: '',
+                    )),
+          );
+        }
+        if (result['msg'] == 2) {
+          print("asdfasdfasdfasdfasdfasdfasdfasdf");
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => RiderShowPage()),
+          );
+        }
+      } else {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => SecondRoute()),
+        );
+      }
+    } catch (e) {
+      print("Error fetching autocomplete results: $e");
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     double screenWidth = MediaQuery.of(context).size.width;
@@ -132,11 +264,7 @@ class myHomePage extends StatelessWidget {
                           children: <Widget>[
                             GestureDetector(
                               onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                      builder: (context) => SecondRoute()),
-                                );
+                                _activeBookingOpen();
                               },
                               child: Container(
                                 width: screenWidth * 3 / 5,

@@ -15,7 +15,7 @@ class _WebSocketExampleState extends State<WebSocketExample> {
     super.initState();
     // Connect to the WebSocket server
     _channel = WebSocketChannel.connect(
-      Uri.parse('ws://192.168.147.184:8080'),
+      Uri.parse('ws://88.222.213.227:8080'),
     );
 
     // Listen to incoming messages

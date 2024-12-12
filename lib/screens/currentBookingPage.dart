@@ -19,7 +19,7 @@ class currentBookingPage extends StatefulWidget {
   final double toLng;
   final double price;
   final double distance;
-  final String clientNickName;
+  final String riderNickName;
 
   currentBookingPage({
     this.fromLat = 0.0,
@@ -28,38 +28,37 @@ class currentBookingPage extends StatefulWidget {
     this.toLng = 0.0,
     this.distance = 0.0,
     this.price = 0.0,
-    this.clientNickName = '',
+    this.riderNickName = '',
   });
   @override
   currentBookingPageState createState() => currentBookingPageState();
 }
 
 class currentBookingPageState extends State<currentBookingPage> {
+  late GoogleMapController _mapController;
   double _totalDragDistance = 0.0;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   late WebSocketChannel _websocket;
   Timer? _timer;
-  late GoogleMapController _mapController;
-  final String _apiKey = 'AIzaSyCXtpXXc0yB7vewvbA2h-RQ0iUsw3Xwz5Y';
   double _bottomOffset = -270;
   bool _isDown = true;
   bool isDisposed = false;
   int _selectedIndex = 0;
-  LatLng? _locationMessage;
+  LatLng? riderLocation;
   bool isFirst = true;
   bool isRideStarted = false;
+  final String _apiKey = 'AIzaSyCXtpXXc0yB7vewvbA2h-RQ0iUsw3Xwz5Y';
 
   String nickName = '';
 
-  Set<Marker> _markers = {};
-  Set<Polyline> _polylines = {};
   Polyline? _routePoints2Client;
   Polyline? _routePoints2Destination;
+  Set<Marker> _markers = {};
 
   String clientDeparture = '';
   String clientDestination = '';
 
-  String clientNickName = '';
+  String riderNickName = '';
 
   LatLng? clientDeparturePosition;
   LatLng? clientDestinationPosition;
@@ -76,25 +75,26 @@ class currentBookingPageState extends State<currentBookingPage> {
       clientDestinationPosition = LatLng(widget.toLat, widget.toLng);
       _distance = widget.distance;
       _price = widget.price;
-      clientNickName = widget.clientNickName;
-    });
+      riderNickName = widget.riderNickName;
 
-    _markers.add(
-      Marker(
-        markerId: MarkerId('$clientNickName'),
-        position: clientDeparturePosition!,
-        infoWindow: InfoWindow(title: clientNickName),
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
-      ),
-    );
-    _markers.add(
-      Marker(
-        markerId: MarkerId('destination'),
-        position: clientDestinationPosition!,
-        infoWindow: InfoWindow(title: 'Destination'),
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRose),
-      ),
-    );
+      _markers.add(
+        Marker(
+          markerId: MarkerId('pickup'),
+          position: clientDeparturePosition!,
+          infoWindow: InfoWindow(title: 'Pickup'),
+          icon:
+              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
+        ),
+      );
+      _markers.add(
+        Marker(
+          markerId: MarkerId('destination'),
+          position: clientDestinationPosition!,
+          infoWindow: InfoWindow(title: 'Departure'),
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRose),
+        ),
+      );
+    });
 
     _setClientDeparture(
         clientDeparturePosition!.latitude, clientDeparturePosition!.longitude);
@@ -103,9 +103,9 @@ class currentBookingPageState extends State<currentBookingPage> {
 
     _checkPermissions();
     _getCurrentLocation();
-    _timer = Timer.periodic(Duration(seconds: 5), (timer) {
-      _getCurrentLocation();
-    });
+    // _timer = Timer.periodic(Duration(seconds: 5), (timer) {
+    //   _getCurrentLocation();
+    // });
 
     // Connect to the WebSocket server
     _websocket = WebSocketChannel.connect(
@@ -116,8 +116,40 @@ class currentBookingPageState extends State<currentBookingPage> {
     _websocket.stream.listen((message) {
       final msg = json.decode(message);
 
-      if (msg['msgType'] == "newBooking") {
-        print(msg);
+      if (msg['msgType'] == "locationUpdate") {
+        setState(() {
+          this.riderLocation = LatLng(msg['latitude'], msg['longitude']);
+          _markers.add(
+            Marker(
+              markerId: MarkerId('rider'),
+              position: riderLocation!,
+              infoWindow: InfoWindow(title: 'Rider'),
+              icon: BitmapDescriptor.defaultMarkerWithHue(
+                  BitmapDescriptor.hueAzure),
+            ),
+          );
+        });
+
+        if (isRideStarted) {
+          _fetchRouteToDestination();
+        } else {
+          _fetchRouteToClient();
+        }
+      }
+      if (msg['msgType'] == "startRide") {
+        setState(() {
+          isRideStarted = true;
+        });
+        _fetchRouteToDestination();
+      }
+      if (msg['msgType'] == "finishRide") {
+        setState(() {
+          isRideStarted = true;
+        });
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => myHomePage()),
+        );
       }
     });
     _getNickName();
@@ -186,47 +218,26 @@ class currentBookingPageState extends State<currentBookingPage> {
           );
 
       if (!isDisposed) {
-        String jsonMsg = json.encode({
-          "msgType": "locationUpdate",
-          "nickName": nickName,
-          "clientNickName": clientNickName,
-          "latitude": position.latitude,
-          "longitude": position.longitude,
-        });
-        _websocket.sink.add(jsonMsg);
         setState(() {
-          _locationMessage = LatLng(position.latitude, position.longitude);
+          // riderLocation = LatLng(position.latitude, position.longitude);
 
-          // if (isRideStarted) {
-          _fetchRouteToDestination();
-          // } else {
-          _fetchRouteToClient();
-          // }
-          print(_locationMessage);
-        });
-        setState(() {
-          _markers.add(
-            Marker(
-              markerId: MarkerId('you'),
-              position: LatLng(position.latitude, position.longitude),
-              infoWindow: InfoWindow(title: 'You'),
-              icon: BitmapDescriptor.defaultMarkerWithHue(
-                  BitmapDescriptor.hueAzure),
-            ),
-          );
+          if (isRideStarted) {
+            _fetchRouteToDestination();
+          } else {
+            if (riderLocation != null) _fetchRouteToClient();
+          }
         });
       }
       if (isFirst) {
         isFirst = false;
 
-        _mapController.animateCamera(
-          CameraUpdate.newLatLng(LatLng(position.latitude, position.longitude)),
-        );
-
         setState(() {});
 
-        _fetchRouteToClient();
-        _fetchRouteToDestination();
+        if (isRideStarted) {
+          _fetchRouteToDestination();
+        } else {
+          if (riderLocation != null) _fetchRouteToClient();
+        }
       }
     } catch (e) {
       print("Error: $e");
@@ -236,6 +247,9 @@ class currentBookingPageState extends State<currentBookingPage> {
   void _onMapCreated(GoogleMapController controller) {
     _mapController = controller;
     _fetchRouteToDestination();
+    _mapController.animateCamera(
+      CameraUpdate.newLatLng(clientDeparturePosition!),
+    );
   }
 
   List<LatLng> _decodePolyline(String encoded) {
@@ -271,7 +285,7 @@ class currentBookingPageState extends State<currentBookingPage> {
 
   Future<void> _fetchRouteToClient() async {
     final url =
-        'https://maps.googleapis.com/maps/api/directions/json?origin=${_locationMessage?.latitude},${_locationMessage?.longitude}&destination=${clientDeparturePosition?.latitude},${clientDeparturePosition?.longitude}&mode=driving&key=$_apiKey';
+        'https://maps.googleapis.com/maps/api/directions/json?origin=${riderLocation?.latitude},${riderLocation?.longitude}&destination=${clientDeparturePosition?.latitude},${clientDeparturePosition?.longitude}&mode=driving&key=$_apiKey';
     final response = await http.get(Uri.parse(url));
 
     if (response.statusCode == 200) {
@@ -289,19 +303,12 @@ class currentBookingPageState extends State<currentBookingPage> {
           width: 4,
         );
       });
-      print("asdfasdfasdfasdfasdf=============>");
-      print(_routePoints2Client);
     }
   }
 
   Future<void> _fetchRouteToDestination() async {
-    String url =
+    final url =
         'https://maps.googleapis.com/maps/api/directions/json?origin=${clientDeparturePosition?.latitude},${clientDeparturePosition?.longitude}&destination=${clientDestinationPosition?.latitude},${clientDestinationPosition?.longitude}&mode=driving&key=$_apiKey';
-
-    if (isRideStarted)
-      url =
-          'https://maps.googleapis.com/maps/api/directions/json?origin=${_locationMessage?.latitude},${_locationMessage?.longitude}&destination=${clientDestinationPosition?.latitude},${clientDestinationPosition?.longitude}&mode=driving&key=$_apiKey';
-
     final response = await http.get(Uri.parse(url));
 
     if (response.statusCode == 200) {
@@ -546,54 +553,6 @@ class currentBookingPageState extends State<currentBookingPage> {
                                 SizedBox(
                                   height: 15.0,
                                 ),
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceEvenly,
-                                  children: [
-                                    Container(
-                                      width: screenWidth * 0.6,
-                                      decoration: BoxDecoration(
-                                          color: Colors.pink,
-                                          borderRadius: BorderRadius.all(
-                                              Radius.circular(30.0))),
-                                      child: TextButton(
-                                        onPressed: () {
-                                          if (isRideStarted == false) {
-                                            setState(() {
-                                              isRideStarted = true;
-                                              String jsonMsg = json.encode({
-                                                "msgType": "startRide",
-                                                "nickName": nickName,
-                                                "clientNickName":
-                                                    clientNickName,
-                                              });
-                                              _websocket.sink.add(jsonMsg);
-                                              _fetchRouteToDestination();
-                                            });
-                                          } else {
-                                            isRideStarted = false;
-                                            String jsonMsg = json.encode({
-                                              "msgType": "finishRide",
-                                              "nickName": nickName,
-                                              "clientNickName": clientNickName,
-                                            });
-                                            _websocket.sink.add(jsonMsg);
-                                            Navigator.pop(context);
-                                          }
-                                        },
-                                        child: Text(
-                                          isRideStarted
-                                              ? "Finish Ride"
-                                              : "Start Ride",
-                                          style: TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 18.0,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                )
                               ],
                             ),
                           ),
@@ -624,7 +583,7 @@ class currentBookingPageState extends State<currentBookingPage> {
                   children: [
                     Center(
                       child: Text(
-                        "Your Client now waiting.",
+                        "Rider coming now.",
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 25.0,

@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:permission_handler/permission_handler.dart';
 import './riderShowPage.dart';
 import 'package:hive/hive.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:http/http.dart' as http;
+import 'package:widget_to_marker/widget_to_marker.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'dart:convert';
 
 class SecondRoute extends StatefulWidget {
@@ -14,41 +17,249 @@ class SecondRoute extends StatefulWidget {
 
 class _SecondRouteState extends State<SecondRoute> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  late GoogleMapController _mapController;
+  late WebSocketChannel _websocket;
+  String _message = "Waiting for messages...";
+  String nickName = '';
+
+  Set<Marker> _markers = {};
+
   double _bottomOffset = 0;
   bool _isDown = false;
   bool isCar = false;
   bool isBike = false;
   bool isTricycle = false;
   double _distance = 0;
-  double _price_Bike = 0;
-  double _price_Tricycle = 0;
-  double _price_Car = 0;
+  double _price_Bike = 0.0;
+  double _price_Tricycle = 0.0;
+  double _price_Car = 0.0;
   bool _payWithCash = true;
   bool _isSelectedWell = false;
+  bool isDisposed = false;
+  bool isFirst = true;
+  LatLng? _myLocation;
 
-  final MapController _mapController = MapController();
   TextEditingController _departureController = TextEditingController();
   TextEditingController _destinationController = TextEditingController();
   LatLng? _departurePosition;
   LatLng? _destinationPosition;
-  List<Map<String, dynamic>> _autocompleteResults = [];
+  List<dynamic> _autocompleteResults = [];
   List<LatLng> _routePoints = [];
+  Polyline? _routePolyline;
   bool _isTypingForDeparture = true;
+
+  final String _apiKey = 'AIzaSyCXtpXXc0yB7vewvbA2h-RQ0iUsw3Xwz5Y';
 
   @override
   void initState() {
     super.initState();
-    _fetchFromLocalServer();
+    _checkPermissions();
+    _getCurrentLocation();
+
+    // Connect to the WebSocket server
+    _websocket = WebSocketChannel.connect(
+      Uri.parse('ws://88.222.213.227:8080'),
+    );
+
+    // Listen to incoming messages
+    _websocket.stream.listen((message) {
+      setState(() {
+        _message = message;
+      });
+      print(message);
+    });
+
+    _getNickName();
   }
 
-  void _fetchFromLocalServer() async {
-    print("123");
-    final url = "http://192.168.147.184:5000/api/adminUser/userList";
+  @override
+  void dispose() {
+    isDisposed = true;
+    super.dispose();
+    _websocket.sink.close();
+  }
+
+  ///////////////////////////////////////////////
+
+  void _onMapCreated(GoogleMapController controller) {
+    _mapController = controller;
+  }
+
+  void _onMapTapped(LatLng position) async {
+    setState(() {
+      if (_isTypingForDeparture) {
+        _departurePosition = position;
+        _markers.add(
+          Marker(
+            markerId: MarkerId('departure'),
+            position: position,
+            infoWindow: InfoWindow(title: 'Departure'),
+            icon: BitmapDescriptor.defaultMarkerWithHue(
+                BitmapDescriptor.hueAzure),
+          ),
+        );
+      } else {
+        _markers.add(
+          Marker(
+            markerId: MarkerId('destination'),
+            position: position,
+            infoWindow: InfoWindow(
+              title: 'Destination',
+            ),
+            icon:
+                BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRose),
+          ),
+        );
+        _destinationPosition = position;
+      }
+      _getNearestAddress(position.latitude, position.longitude);
+      if (_departurePosition != null && _destinationPosition != null) {
+        _fetchRoute();
+      }
+    });
+  }
+
+  ////////////////////////////////////////////////////
+
+  void _getNickName() async {
+    var box = await Hive.openBox('userData');
+    String nickName = await box.get('nickName');
+    setState(() {
+      this.nickName = nickName;
+    });
+    String jsonMsg = json.encode({
+      "msgType": "hello",
+      "nickName": nickName,
+      "type": "client",
+    });
+    _websocket.sink.add(jsonMsg);
+  }
+
+  Future<void> _checkPermissions() async {
+    PermissionStatus permission = await Permission.location.status;
+    if (permission.isDenied || permission.isPermanentlyDenied) {
+      permission = await Permission.location.request();
+    }
+
+    if (permission.isGranted) {
+      print("Location permission granted");
+    } else {
+      print("Location permission denied!");
+    }
+  }
+
+  Future<void> _getCurrentLocation() async {
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        print("Location services are disabled.");
+        return;
+      }
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          print("Location permission denied.");
+          return;
+        }
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        print(
+            "Location permissions are permanently denied. Enable them in settings.");
+        return;
+      }
+
+      Position position = await Geolocator.getCurrentPosition(
+          // desiredAccuracy: LocationAccuracy.high,
+          );
+
+      if (!isDisposed) {
+        setState(() {
+          _myLocation = LatLng(position.latitude, position.longitude);
+
+          print(_myLocation);
+        });
+      }
+      if (isFirst) {
+        isFirst = false;
+        _mapController.animateCamera(
+          CameraUpdate.newLatLng(LatLng(position.latitude, position.longitude)),
+        );
+        setState(() {
+          _departurePosition = _myLocation!;
+          _markers.add(
+            Marker(
+              markerId: MarkerId('departure'),
+              position: _myLocation!,
+              infoWindow: InfoWindow(title: 'Departure'),
+              icon: BitmapDescriptor.defaultMarkerWithHue(
+                  BitmapDescriptor.hueAzure),
+            ),
+          );
+        });
+        _getNearestAddressForDeparture(position.latitude, position.longitude);
+      }
+    } catch (e) {
+      print("Error: $e");
+    }
+  }
+
+  void _bookRide() async {
+    final url = "http://88.222.213.227:5000/api/client/bookRide";
 
     try {
-      final response = await http.get(Uri.parse(url));
-      final results = json.decode(response.body);
-      print(results['data'][0]);
+      final response = await http.post(
+        Uri.parse(url),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: json.encode({
+          "nickName": nickName,
+          "fromLat": _departurePosition?.latitude,
+          "fromLng": _departurePosition?.longitude,
+          "toLat": _destinationPosition?.latitude,
+          "toLng": _destinationPosition?.longitude,
+          "fromLocation": _departureController.text,
+          "toLocation": _destinationController.text,
+          "distance": _distance,
+          "price": isBike
+              ? _price_Bike
+              : isTricycle
+                  ? _price_Tricycle
+                  : _price_Car,
+          "vehicleType": isBike
+              ? 0
+              : isTricycle
+                  ? 1
+                  : 2,
+          "paymentMethod": _payWithCash ? 0 : 1,
+        }),
+      );
+      if (response.statusCode == 200) {
+        String notification = json.encode({
+          "msgType": "newBooking",
+          "nickName": nickName,
+          "fromLat": _departurePosition?.latitude,
+          "fromLng": _departurePosition?.longitude,
+          "toLat": _destinationPosition?.latitude,
+          "toLng": _destinationPosition?.longitude,
+          "distance": _distance,
+          "price": isBike
+              ? _price_Bike
+              : isTricycle
+                  ? _price_Tricycle
+                  : _price_Car,
+          "vehicleType": isBike
+              ? 0
+              : isTricycle
+                  ? 1
+                  : 2,
+          "paymentMethod": _payWithCash ? 0 : 1,
+        });
+        _websocket.sink.add(notification);
+      }
     } catch (e) {
       print("Error fetching autocomplete results: $e");
     }
@@ -62,6 +273,8 @@ class _SecondRouteState extends State<SecondRoute> {
       return;
     }
     if (isBike | isTricycle | isCar) {
+      _setHiveData();
+      _bookRide();
       Navigator.push(
         context,
         MaterialPageRoute(builder: (context) => RiderShowPage()),
@@ -75,18 +288,35 @@ class _SecondRouteState extends State<SecondRoute> {
   }
 
   void _calculatePrice(double distance) {
-    if (distance <= 2000) {
+    if (distance <= 3000) {
       setState(() {
-        _price_Bike = 42;
-        _price_Tricycle = 42;
-        _price_Car = 42;
+        _price_Bike = 41.0;
+        _price_Tricycle = 120.0;
+        _price_Car = 200.0;
       });
     } else {
-      int distanceClip = (distance.ceil() / 2000).floor();
       setState(() {
-        _price_Bike = 42 + distanceClip * 10;
-        _price_Tricycle = 42 + distanceClip * 10;
-        _price_Car = 42 + distanceClip * 10;
+        if (distance < 5000) {
+          _price_Bike = 41.0 + (distance - 3000) / 1000 * 15;
+          _price_Tricycle = 120.0 + (distance - 3000) / 1000 * 15;
+          _price_Car = 200.0 + (distance - 3000) / 1000 * 15;
+        } else if (distance < 8000) {
+          _price_Bike = 41.0 + (distance - 3000) / 1000 * 16;
+          _price_Tricycle = 120.0 + (distance - 3000) / 1000 * 16;
+          _price_Car = 200.0 + (distance - 3000) / 1000 * 16;
+        } else if (distance < 11000) {
+          _price_Bike = 41.0 + (distance - 3000) / 1000 * 17;
+          _price_Tricycle = 120.0 + (distance - 3000) / 1000 * 17;
+          _price_Car = 200.0 + (distance - 3000) / 1000 * 17;
+        } else if (distance < 15000) {
+          _price_Bike = 41.0 + (distance - 3000) / 1000 * 18;
+          _price_Tricycle = 120.0 + (distance - 3000) / 1000 * 18;
+          _price_Car = 200.0 + (distance - 3000) / 1000 * 18;
+        } else {
+          _price_Bike = 41.0 + (distance - 3000) / 1000 * 19;
+          _price_Tricycle = 120.0 + (distance - 3000) / 1000 * 19;
+          _price_Car = 200.0 + (distance - 3000) / 1000 * 19;
+        }
       });
     }
 
@@ -95,36 +325,74 @@ class _SecondRouteState extends State<SecondRoute> {
 
   void _fetchAutocompleteResults(String query) async {
     final url =
-        "https://nominatim.openstreetmap.org/search?q=$query&format=json&addressdetails=1"
-        "&viewbox=116.5891,21.1224,126.6056,4.2158&bounded=1";
-    try {
-      final response = await http.get(Uri.parse(url));
-      if (response.statusCode == 200) {
-        final List results = json.decode(response.body);
-        setState(() {
-          _autocompleteResults = results
-              .map((e) => {
-                    "display_name": e["display_name"],
-                    "lat": double.parse(e["lat"]),
-                    "lon": double.parse(e["lon"]),
-                  })
-              .toList();
-        });
-      }
-    } catch (e) {
-      print("Error fetching autocomplete results: $e");
-    }
-  }
-
-  Future<void> _getNearestAddress(double latitude, double longitude) async {
-    final url =
-        "https://nominatim.openstreetmap.org/reverse?lat=$latitude&lon=$longitude&format=json";
+        'https://maps.googleapis.com/maps/api/place/autocomplete/json?input=$query&key=$_apiKey&location=${_myLocation!.latitude},${_myLocation!.longitude}&radius=50000&language=en&components=country:ph';
 
     try {
       final response = await http.get(Uri.parse(url));
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        String address = data['display_name'] ?? "No address found";
+
+        // Check if there are results
+
+        print(data);
+        if (data['predictions'] != null && data['predictions'].isNotEmpty) {
+          setState(() {
+            _autocompleteResults = data['predictions']
+                .map((result) => {
+                      'display_name': result['description'],
+                      'placeId': result['place_id'],
+                    })
+                .toList();
+          });
+        } else {
+          setState(() {
+            _autocompleteResults = [];
+          });
+        }
+      } else {
+        print('Error fetching autocomplete results: ${response.statusCode}');
+        setState(() {
+          _autocompleteResults = [];
+        });
+      }
+    } catch (e) {
+      print("Error fetching autocomplete results: $e");
+      setState(() {
+        _autocompleteResults = [];
+      });
+    }
+  }
+
+  Future<void> _getNearestAddressForDeparture(
+      double latitude, double longitude) async {
+    final url =
+        'https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=$_apiKey';
+
+    try {
+      final response = await http.get(Uri.parse(url));
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        String address =
+            data['results'][0]['formatted_address'] ?? "No address found";
+        _departureController.text = address;
+      } else {
+        print("Error: ${response.statusCode}");
+      }
+    } catch (e) {
+      print("Error fetching address: $e");
+    }
+  }
+
+  Future<void> _getNearestAddress(double latitude, double longitude) async {
+    final url =
+        'https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=$_apiKey';
+
+    try {
+      final response = await http.get(Uri.parse(url));
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        String address =
+            data['results'][0]['formatted_address'] ?? "No address found";
         if (_isTypingForDeparture) {
           _departureController.text = address;
         } else {
@@ -138,16 +406,64 @@ class _SecondRouteState extends State<SecondRoute> {
     }
   }
 
-  void _selectLocationFromAutocomplete(Map<String, dynamic> location) {
-    final selectedLatLng = LatLng(location["lat"], location["lon"]);
+  Future<Map<String, dynamic>> getLatLngfromid(String placeId) async {
+    final placeDetailsUrl =
+        'https://maps.googleapis.com/maps/api/place/details/json?place_id=$placeId&key=$_apiKey';
+
+    final response = await http.get(Uri.parse(placeDetailsUrl));
+
+    if (response.statusCode == 200) {
+      // Parse the response JSON
+      final data = jsonDecode(response.body);
+      final result = data['result'];
+
+      // Extract latitude and longitude
+      final latitude = result['geometry']['location']['lat'];
+      final longitude = result['geometry']['location']['lng'];
+
+      return {
+        'lat': latitude,
+        'lng': longitude,
+        'formatted_address': result['formatted_address'],
+      };
+    } else {
+      throw Exception('Failed to fetch place details');
+    }
+  }
+
+  void _selectLocationFromAutocomplete(Map<String, dynamic> location) async {
+    final selectedLatLng = await getLatLngfromid(location['placeId']);
     setState(() {
-      _mapController.move(selectedLatLng, 16.0);
+      _mapController.animateCamera(
+        CameraUpdate.newLatLng(
+            LatLng(selectedLatLng['lat'], selectedLatLng['lng'])),
+      );
       if (_isTypingForDeparture) {
-        _departurePosition = selectedLatLng;
-        _departureController.text = location["display_name"];
+        _departurePosition =
+            LatLng(selectedLatLng['lat'], selectedLatLng['lng']);
+        _markers.add(
+          Marker(
+            markerId: MarkerId('departure'),
+            position: _departurePosition!,
+            infoWindow: InfoWindow(title: 'Departure'),
+            icon: BitmapDescriptor.defaultMarkerWithHue(
+                BitmapDescriptor.hueAzure),
+          ),
+        );
+        _departureController.text = location['display_name'];
       } else {
-        _destinationPosition = selectedLatLng;
-        _destinationController.text = location["display_name"];
+        _destinationPosition =
+            LatLng(selectedLatLng['lat'], selectedLatLng['lng']);
+        _markers.add(
+          Marker(
+            markerId: MarkerId('destination'),
+            position: _destinationPosition!,
+            infoWindow: InfoWindow(title: 'Destination'),
+            icon:
+                BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRose),
+          ),
+        );
+        _destinationController.text = location['display_name'];
       }
 
       if (_departurePosition != null && _destinationPosition != null) {
@@ -171,6 +487,27 @@ class _SecondRouteState extends State<SecondRoute> {
     await box.put('priceBike', _price_Bike);
     await box.put('priceTricycle', _price_Tricycle);
     await box.put('priceCar', _price_Car);
+
+    await box.put('distance', _distance);
+
+    await box.put(
+        'price',
+        isBike
+            ? _price_Bike
+            : isTricycle
+                ? _price_Tricycle
+                : _price_Car);
+
+    await box.put('paymentMethod', _payWithCash ? 0 : 1);
+    if (isBike) {
+      await box.put('vehicleType', 0);
+    }
+    if (isTricycle) {
+      await box.put('vehicleType', 1);
+    }
+    if (isCar) {
+      await box.put('vehicleType', 2);
+    }
   }
 
   void _saveVehicleType() async {
@@ -186,35 +523,60 @@ class _SecondRouteState extends State<SecondRoute> {
     }
   }
 
+  List<LatLng> _decodePolyline(String encoded) {
+    List<LatLng> points = [];
+    int index = 0, len = encoded.length;
+    int lat = 0, lng = 0;
+
+    while (index < len) {
+      int b, shift = 0, result = 0;
+      do {
+        b = encoded.codeUnitAt(index++) - 63;
+        result |= (b & 0x1F) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+      int dLat = (result & 1) != 0 ? ~(result >> 1) : (result >> 1);
+      lat += dLat;
+
+      shift = 0;
+      result = 0;
+      do {
+        b = encoded.codeUnitAt(index++) - 63;
+        result |= (b & 0x1F) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+      int dLng = (result & 1) != 0 ? ~(result >> 1) : (result >> 1);
+      lng += dLng;
+
+      points.add(LatLng(lat / 1E5, lng / 1E5));
+    }
+
+    return points;
+  }
+
   Future<void> _fetchRoute() async {
     final url =
-        "https://router.project-osrm.org/route/v1/driving/${_departurePosition!.longitude},${_departurePosition!.latitude};${_destinationPosition!.longitude},${_destinationPosition!.latitude}?overview=full&geometries=geojson";
+        'https://maps.googleapis.com/maps/api/directions/json?origin=${_departurePosition?.latitude},${_departurePosition?.longitude}&destination=${_destinationPosition?.latitude},${_destinationPosition?.longitude}&mode=driving&key=$_apiKey';
+    final response = await http.get(Uri.parse(url));
 
-    try {
-      final response = await http.get(Uri.parse(url));
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final coordinates = data['routes'][0]['geometry']['coordinates'];
-        final points = coordinates.map<LatLng>((coord) {
-          return LatLng(coord[1], coord[0]); // Reverse lat/lon order
-        }).toList();
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      final points = data['routes'][0]['overview_polyline']['points'];
+      final polylinePoints = _decodePolyline(points);
+      final route = data['routes'][0];
+      final leg = route['legs'][0];
+      _distance = leg['distance']['value'].toDouble();
+      setState(() {
+        _routePolyline = Polyline(
+          polylineId: PolylineId('route'),
+          points: polylinePoints,
+          color: Colors.blue,
+          width: 4,
+        );
+      });
 
-        setState(() {
-          _distance = data["routes"][0]["distance"];
-        });
-        print(_distance);
-        _calculatePrice(_distance);
-
-        setState(() {
-          _routePoints = points;
-          print(points);
-        });
-        _isSelectedWell = true;
-      } else {
-        print("Failed to fetch route: ${response.body}");
-      }
-    } catch (e) {
-      print("Error fetching route: $e");
+      _calculatePrice(_distance);
+      _isSelectedWell = true;
     }
     _setHiveData();
   }
@@ -223,7 +585,6 @@ class _SecondRouteState extends State<SecondRoute> {
   Widget build(BuildContext context) {
     double screenWidth = MediaQuery.of(context).size.width;
     double screenHeight = MediaQuery.of(context).size.height;
-    _fetchFromLocalServer();
     return Scaffold(
       key: _scaffoldKey,
       drawer: Container(
@@ -314,7 +675,7 @@ class _SecondRouteState extends State<SecondRoute> {
                         ),
                       ),
                       Text(
-                        "$_price_Bike",
+                        "${double.parse(_price_Bike.toStringAsFixed(2))}",
                         style: TextStyle(
                           color: !isBike ? Colors.black87 : Colors.white,
                           fontSize: 18.0,
@@ -388,7 +749,7 @@ class _SecondRouteState extends State<SecondRoute> {
                         ),
                       ),
                       Text(
-                        "$_price_Tricycle",
+                        "${double.parse(_price_Tricycle.toStringAsFixed(2))}",
                         style: TextStyle(
                           color: !isTricycle ? Colors.black87 : Colors.white,
                           fontSize: 18.0,
@@ -462,7 +823,7 @@ class _SecondRouteState extends State<SecondRoute> {
                         ),
                       ),
                       Text(
-                        "$_price_Car",
+                        "${double.parse(_price_Car.toStringAsFixed(2))}",
                         style: TextStyle(
                           color: !isCar ? Colors.black87 : Colors.white,
                           fontSize: 18.0,
@@ -546,85 +907,21 @@ class _SecondRouteState extends State<SecondRoute> {
         child: Stack(
           children: [
             Center(
-              child: FlutterMap(
-                mapController: _mapController,
-                options: MapOptions(
-                  initialCenter: LatLng(14.590449, 120.980362),
-                  initialZoom: 16.0,
-                  maxZoom: 18.0,
-                  minZoom: 5.0,
-                  cameraConstraint: CameraConstraint.contain(
-                    bounds: LatLngBounds(
-                        LatLng(4.2158, 116.5891), LatLng(21.1224, 126.6056)),
-                  ),
-                  // swPanBoundary: LatLng(4.2158, 116.5891),
-                  // nePanBoundary: LatLng(21.1224, 126.6056),
-                  // boundsOptions: FitBoundsOptions(
-                  //   padding: EdgeInsets.all(10.0),
-                  // ),
-                  onTap: (tapPosition, point) {
-                    setState(() {
-                      if (_isTypingForDeparture) {
-                        _departurePosition = point;
-                      } else {
-                        _destinationPosition = point;
-                      }
-                      _getNearestAddress(point.latitude, point.longitude);
-                      if (_departurePosition != null &&
-                          _destinationPosition != null) {
-                        _fetchRoute();
-                      }
-                    });
-                  },
+              child: GoogleMap(
+                initialCameraPosition: CameraPosition(
+                  target: LatLng(11.55, 124.75), // Default location
+                  zoom: 10,
                 ),
-                children: [
-                  TileLayer(
-                    urlTemplate:
-                        "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-                    subdomains: ['a', 'b', 'c'],
-                  ),
-                  if (_departurePosition != null)
-                    MarkerLayer(
-                      markers: [
-                        Marker(
-                          width: 80.0,
-                          height: 80.0,
-                          point: _departurePosition!,
-                          child: Icon(
-                            Icons.location_pin,
-                            color: Colors.blue,
-                            size: 60.0,
-                          ),
-                        ),
-                      ],
-                    ),
-                  if (_destinationPosition != null)
-                    MarkerLayer(
-                      markers: [
-                        Marker(
-                          width: 80.0,
-                          height: 80.0,
-                          point: _destinationPosition!,
-                          child: Icon(
-                            Icons.location_pin,
-                            color: Colors.red,
-                            size: 60.0,
-                          ),
-                        ),
-                      ],
-                    ),
-                  if (_routePoints.isNotEmpty)
-                    PolylineLayer(
-                      polylines: [
-                        Polyline(
-                          strokeCap: StrokeCap.round,
-                          points: _routePoints,
-                          strokeWidth: 6.0,
-                          color: Colors.green,
-                        ),
-                      ],
-                    ),
-                ],
+                onMapCreated: _onMapCreated,
+                myLocationEnabled: true,
+                markers: _markers,
+                // cameraTargetBounds: CameraTargetBounds(philippinesBounds),
+                polylines: _routePolyline != null
+                    ? {
+                        _routePolyline!,
+                      }
+                    : {},
+                onTap: _onMapTapped,
               ),
             ),
             AnimatedPositioned(
@@ -788,7 +1085,10 @@ class _SecondRouteState extends State<SecondRoute> {
                                                             onPressed: () {
                                                               _destinationController
                                                                   .clear();
-                                                              setState(() {});
+                                                              setState(() {
+                                                                _autocompleteResults
+                                                                    .clear();
+                                                              });
                                                             },
                                                           )
                                                         : null,
@@ -852,9 +1152,6 @@ class _SecondRouteState extends State<SecondRoute> {
                                           fontSize: 20.0,
                                         ),
                                       ),
-                                      // SizedBox(
-                                      //   width: 30.0,
-                                      // ),
                                       if (isBike)
                                         Image.asset(
                                           height: 30.0,

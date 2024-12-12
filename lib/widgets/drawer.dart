@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../screens/test.dart';
+import 'package:hive/hive.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 
 class MyDrawer extends StatefulWidget {
   @override
@@ -7,6 +9,21 @@ class MyDrawer extends StatefulWidget {
 }
 
 class _MyDrawerState extends State<MyDrawer> {
+  String nickName = '';
+
+  void initState() {
+    super.initState();
+    _getNickName();
+  }
+
+  void _getNickName() async {
+    var box = await Hive.openBox('userData');
+    String nickName = await box.get('nickName');
+    setState(() {
+      this.nickName = nickName;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Drawer(
@@ -14,8 +31,8 @@ class _MyDrawerState extends State<MyDrawer> {
       child: Column(
         children: <Widget>[
           UserAccountsDrawerHeader(
-            accountName: Text("Jenny K."),
-            accountEmail: Text("k.Jenny@gmail.com"),
+            accountName: Text("$nickName"),
+            accountEmail: Text("Welcome back."),
             currentAccountPicture: ClipOval(
               child: Image.network(
                 'https://i.postimg.cc/jSFD1MMR/all-bg.jpg',
